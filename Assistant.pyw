@@ -27,44 +27,8 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
-# Rend accessibles les DLL NVIDIA installées dans l'environnement virtuel,
-# sans modifier le PATH système et sans nécessiter de droits administrateur.
-NVIDIA_PACKAGES_DIR = os.path.join(
-    sys.prefix,
-    "Lib",
-    "site-packages",
-    "nvidia",
-)
-
-NVIDIA_DLL_DIRS = (
-    os.path.join(NVIDIA_PACKAGES_DIR, "cuda_runtime", "bin"),
-    os.path.join(NVIDIA_PACKAGES_DIR, "cublas", "bin"),
-    os.path.join(NVIDIA_PACKAGES_DIR, "cufft", "bin"),
-    os.path.join(NVIDIA_PACKAGES_DIR, "cudnn", "bin"),
-    os.path.join(NVIDIA_PACKAGES_DIR, "cuda_nvrtc", "bin"),
-)
-
-AVAILABLE_NVIDIA_DLL_DIRS = [
-    directory
-    for directory in NVIDIA_DLL_DIRS
-    if os.path.isdir(directory)
-]
-
-# Conserve les objets retournés par os.add_dll_directory pendant toute la
-# durée du processus. Leur destruction retirerait les dossiers de recherche.
-if sys.platform == "win32":
-    NVIDIA_DLL_HANDLES = [
-        os.add_dll_directory(directory)
-        for directory in AVAILABLE_NVIDIA_DLL_DIRS
-    ]
-else:
-    NVIDIA_DLL_HANDLES = []
-
-# Certaines dépendances natives consultent encore PATH sous Windows.
-if AVAILABLE_NVIDIA_DLL_DIRS:
-    os.environ["PATH"] = os.pathsep.join(
-        AVAILABLE_NVIDIA_DLL_DIRS + [os.environ.get("PATH", "")]
-    )
+from src.platform.dll_loader import setup_nvidia_dll_directories
+NVIDIA_DLL_HANDLES = setup_nvidia_dll_directories()
 
 # Charge ONNX Runtime avant PyQt5 afin d'éviter les conflits de DLL. CUDA est
 # sélectionné automatiquement lorsqu'il est disponible, sinon le CPU est utilisé.
@@ -230,52 +194,11 @@ def apply_rounded_corners(hwnd):
         pass
 
 
-# ==========================================
-# DÉTECTION DE L'APPLICATION AU PREMIER PLAN
-# ==========================================
-ADOBE_PROCESS_NAMES = {
-    "acrord32.exe",   # Adobe Acrobat Reader (32 bits / historique)
-    "acrobat.exe",    # Adobe Acrobat Pro / DC
-    "rdrcef.exe",     # Sous-processus du moteur de rendu d'Acrobat Reader DC
-}
-
-def get_foreground_process_name() -> str:
-    """Retourne le nom (minuscule) de l'exécutable de la fenêtre au premier plan."""
-    if sys.platform != 'win32':
-        return ""
-    try:
-        hwnd = ctypes.windll.user32.GetForegroundWindow()
-        if not hwnd:
-            return ""
-        pid = ctypes.c_ulong()
-        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        if not pid.value:
-            return ""
-
-        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        handle = ctypes.windll.kernel32.OpenProcess(
-            PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value
-        )
-        if not handle:
-            return ""
-        try:
-            buffer_size = ctypes.c_ulong(260)
-            buffer = ctypes.create_unicode_buffer(260)
-            success = ctypes.windll.kernel32.QueryFullProcessImageNameW(
-                handle, 0, buffer, ctypes.byref(buffer_size)
-            )
-            if success:
-                return os.path.basename(buffer.value).lower()
-        finally:
-            ctypes.windll.kernel32.CloseHandle(handle)
-    except (AttributeError, OSError, ValueError):
-        pass
-    return ""
-
-
-def is_adobe_reader_foreground() -> bool:
-    """Indique si la fenêtre active appartient à Adobe Reader/Acrobat."""
-    return get_foreground_process_name() in ADOBE_PROCESS_NAMES
+from src.platform.foreground import (
+    ADOBE_PROCESS_NAMES,
+    get_foreground_process_name,
+    is_adobe_reader_foreground,
+)
 
 
 # ==========================================
@@ -329,228 +252,28 @@ def initialize_icons() -> None:
 # ==========================================
 # CONFIGURATION JSON
 # ==========================================
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(APP_DIR, "config.json")
-HTTP_TIMEOUT = (10, 60)
-STATUS_TIMEOUT = (1.5, 2.5)
-LOGGER = logging.getLogger(__name__)
-LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+from src.config.schema import (
+    APP_DIR,
+    CONFIG_FILE,
+    HTTP_TIMEOUT,
+    STATUS_TIMEOUT,
+    LOGGER,
+    LOG_FORMAT,
+    DEFAULT_CONFIG,
+)
+from src.config.manager import load_config, save_config
+from src.llm.response_parser import (
+    clean_chunk,
+    split_thinking_and_answer,
+    parse_audio_response,
+)
+from src.rendering.markdown import (
+    format_inline_markdown,
+    markdown_to_html,
+    markdown_to_spoken_text,
+)
 
-DEFAULT_CONFIG = {
-    "hotkeys_enabled": True,
-    "api_url": "http://127.0.0.1:8080/v1/chat/completions",
-    "llama_server": {
-        "auto_start": True,
-        "executable": "llama-server.exe",
-        "model": "gemma-4-12B-it-qat-UD-Q4_K_XL.gguf",
-        "arguments": ["--mmproj", "mmproj-F16.gguf", "--spec-draft-model",
-                    "mtp-gemma-4-12B-it.gguf",
-                    "--spec-type", "draft-mtp",
-                    "--spec-draft-n-max", "4",
-                    "--n-gpu-layers", "999",
-                    "--ctx-size", "8192",
-                    "--port", "8080",
-                    "--flash-attn", "on",
-                    "--parallel", "1",
-                    "--cache-type-k", "q8_0",
-                    "--cache-type-v", "q8_0",
-                    "--spec-draft-type-k", "q8_0",
-                    "--spec-draft-type-v", "q8_0",
-                    "--reasoning-budget", "0",
-                    "-b", "512",
-                    "--temp", "1.0",
-                    "--top-p", "0.95",
-                    "--top-k", "64"]
-    },
-    "text_to_speech": {
-        "rate": 0,
-        "speed": 1.2,
-        "max_pause_ms": 220,
-        "volume": 100,
-        "automatic_reading": False,
-        "model_path": os.path.join("kokoro", "kokoro-v1.0.onnx"),
-        "voices_path": os.path.join("kokoro", "voices-v1.0.bin"),
-        "voice": "ff_siwis",
-        "language": "fr-fr",
-        "output_device": None,
-        "output_device_name": ""
-    },
-    "voice_input": {
-        "enabled": True,
-        "hotkey": "ctrl+alt+1",
-        "input_device": None,
-        "input_device_name": "",
-        "sample_rate": 16000,
-        "minimum_duration": 0.5,
-        "minimum_rms_level": 0.003,
-        "audio_format": "wav",
-        "maximum_duration": 60.0,
-        "release_tail_ms": 700,
-        "microphone_gain": 2.0,
-        "language": "fr",
-        "vocabulary_prompt": (
-            "Français technique. Vocabulaire possible : Safran, roue frein, "
-            "éléments finis, contrainte, Kevin, Valentin, ATL2, Falcon 2000, Falcon 2000EX, Falcon 900/900EX, "
-            "déformation, fatigue, dimensionnement, CATIA, ANSIS, Rafale Air, Rafale Marine, Mirage 2000, Mirage F1"
-        )
-    },
-    "actions": [
-        {
-            "name": "Répondre",
-            "system_prompt": "Tu es un assistant IA utile. Réponds de manière concise et directe à la question ou au texte de l'utilisateur.",
-            "prompt_prefix": ""
-        },
-        {
-            "name": "Améliorer",
-            "system_prompt": "Tu es un expert en rédaction. Réécris le texte de l'utilisateur pour l'améliorer (orthographe, clarté, style). Ne renvoie que le texte réécrit, sans commentaires.",
-            "prompt_prefix": "Réécris ce texte :"
-        },
-        {
-            "name": "Agent",
-            "system_prompt": (
-                "Tu es un agent IA local. Tu peux répondre normalement, mais tu peux aussi utiliser les outils "
-                "qui te sont fournis. Utilise un outil lorsque la demande nécessite réellement une action, "
-                "par exemple créer un fichier. Ne simule jamais l'exécution d'un outil : si un outil est nécessaire, "
-                "appelle-le. Après l'exécution, explique brièvement le résultat à l'utilisateur. "
-                "Réponds en français sauf demande contraire."
-            ),
-            "prompt_prefix": ""
-        }
-    ]
-}
 
-def load_config() -> dict:
-    """Charge et normalise la configuration sans bloquer le démarrage."""
-    config = copy.deepcopy(DEFAULT_CONFIG)
-    if not os.path.exists(CONFIG_FILE):
-        return config
-
-    try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as config_file:
-            loaded = json.load(config_file)
-        if not isinstance(loaded, dict):
-            raise ValueError("La racine de la configuration doit être un objet JSON")
-
-        config["hotkeys_enabled"] = bool(loaded.get("hotkeys_enabled", True))
-
-        loaded_tts = loaded.get("text_to_speech")
-        if isinstance(loaded_tts, dict):
-            config["text_to_speech"].update(loaded_tts)
-        tts = config["text_to_speech"]
-        tts["rate"] = int(tts.get("rate", 0))
-        tts["volume"] = min(100, max(0, int(tts.get("volume", 100))))
-        tts["automatic_reading"] = bool(tts.get("automatic_reading", False))
-        # Migration automatique depuis l'ancienne configuration Piper.
-        old_model_path = str(tts.get("model_path", "")).lower()
-        if "piper" in old_model_path or old_model_path.endswith("fr_fr-siwis-medium.onnx"):
-            tts["model_path"] = DEFAULT_CONFIG["text_to_speech"]["model_path"]
-        tts.pop("piper_executable", None)
-        tts.setdefault("voices_path", DEFAULT_CONFIG["text_to_speech"]["voices_path"])
-        tts.setdefault("voice", DEFAULT_CONFIG["text_to_speech"]["voice"])
-        tts.setdefault("language", DEFAULT_CONFIG["text_to_speech"]["language"])
-        tts.setdefault("output_device", DEFAULT_CONFIG["text_to_speech"]["output_device"])
-        tts.setdefault("output_device_name", DEFAULT_CONFIG["text_to_speech"]["output_device_name"])
-
-        api_url = loaded.get("api_url", config["api_url"])
-        if not isinstance(api_url, str) or not re.match(r"^https?://", api_url.strip()):
-            api_url = config["api_url"]
-        if api_url in {
-            "http://localhost:8080/completion",
-            "http://127.0.0.1:8080/completion",
-        }:
-            api_url = DEFAULT_CONFIG["api_url"]
-        config["api_url"] = api_url.strip()
-
-        loaded_server = loaded.get("llama_server")
-        if isinstance(loaded_server, dict):
-            config["llama_server"].update(loaded_server)
-        server = config["llama_server"]
-        server["auto_start"] = bool(server.get("auto_start", True))
-        for key in ("executable", "model"):
-            if not isinstance(server.get(key), str):
-                server[key] = DEFAULT_CONFIG["llama_server"][key]
-        arguments = server.get("arguments")
-        if not isinstance(arguments, list) or not all(
-            isinstance(argument, (str, int, float)) for argument in arguments
-        ):
-            server["arguments"] = copy.deepcopy(
-                DEFAULT_CONFIG["llama_server"]["arguments"]
-            )
-
-        # Le tool calling OpenAI-compatible de llama.cpp nécessite le moteur Jinja.
-        # On l'ajoute automatiquement aux configurations existantes.
-        if "--jinja" not in [str(argument) for argument in server["arguments"]]:
-            server["arguments"].append("--jinja")
-        loaded_voice = loaded.get("voice_input")
-        if isinstance(loaded_voice, dict):
-            config["voice_input"].update(loaded_voice)
-        voice = config["voice_input"]
-        voice["enabled"] = bool(voice.get("enabled", True))
-        voice["hotkey"] = "ctrl+alt+1"
-        voice["input_device"] = voice.get("input_device")
-        voice["input_device_name"] = str(voice.get("input_device_name") or "")
-        voice["sample_rate"] = int(voice.get("sample_rate") or 16000)
-        voice["minimum_duration"] = max(0.1, float(voice.get("minimum_duration") or 0.5))
-        voice["minimum_rms_level"] = max(0.0, float(voice.get("minimum_rms_level", 0.003)))
-        voice["audio_format"] = "wav"
-        voice["maximum_duration"] = min(300.0, max(1.0, float(voice.get("maximum_duration") or 60.0)))
-        voice["release_tail_ms"] = min(1500, max(0, int(voice.get("release_tail_ms", 700))))
-        voice["microphone_gain"] = min(8.0, max(1.0, float(voice.get("microphone_gain", 2.0))))
-        voice["language"] = str(voice.get("language") or "fr").strip().lower()
-        voice["vocabulary_prompt"] = str(voice.get("vocabulary_prompt") or DEFAULT_CONFIG["voice_input"]["vocabulary_prompt"]).strip()
-
-        # Migration automatique des anciens réglages, trop sensibles au bruit et
-        # susceptibles de couper la dernière syllabe.
-        if isinstance(loaded_voice, dict):
-            if loaded_voice.get("minimum_duration") == 0.3:
-                voice["minimum_duration"] = 0.5
-            if loaded_voice.get("minimum_rms_level") == 0.0001:
-                voice["minimum_rms_level"] = 0.003
-            if loaded_voice.get("release_tail_ms") == 300:
-                voice["release_tail_ms"] = 700
-
-        loaded_actions = loaded.get("actions")
-        valid_actions = []
-        if isinstance(loaded_actions, list):
-            for action in loaded_actions:
-                if not isinstance(action, dict):
-                    continue
-                name = action.get("name")
-                system_prompt = action.get("system_prompt")
-                prompt_prefix = action.get("prompt_prefix", "")
-                if isinstance(name, str) and isinstance(system_prompt, str):
-                    valid_actions.append({
-                        "name": name.strip() or "Action sans nom",
-                        "system_prompt": system_prompt,
-                        "prompt_prefix": (
-                            prompt_prefix if isinstance(prompt_prefix, str) else ""
-                        ),
-                    })
-        config["actions"] = valid_actions or copy.deepcopy(DEFAULT_CONFIG["actions"])
-        # Ajoute automatiquement l'action Agent aux anciennes configurations.
-        if not any(str(action.get("name", "")).strip().casefold() == "agent" for action in config["actions"]):
-            config["actions"].append(copy.deepcopy(DEFAULT_CONFIG["actions"][-1]))
-        return config
-    except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError) as error:
-        LOGGER.warning("Configuration ignorée (%s): %s", CONFIG_FILE, error)
-        return copy.deepcopy(DEFAULT_CONFIG)
-
-def save_config(config: dict) -> None:
-    """Enregistre la configuration de façon atomique."""
-    temporary_file = CONFIG_FILE + ".tmp"
-    try:
-        with open(temporary_file, "w", encoding="utf-8") as config_file:
-            json.dump(config, config_file, indent=4, ensure_ascii=False)
-            config_file.flush()
-            os.fsync(config_file.fileno())
-        # os.replace évite de laisser un JSON partiellement écrit après un incident.
-        os.replace(temporary_file, CONFIG_FILE)
-    except (OSError, TypeError, ValueError):
-        try:
-            os.remove(temporary_file)
-        except FileNotFoundError:
-            pass
-        raise
 
 # ==========================================
 # PROCESSUS LOCAL LLAMA.CPP
@@ -2103,16 +1826,7 @@ class LlamaThread(QThread):
     def stop(self):
         self._stop_requested = True
 
-    @staticmethod
-    def clean_chunk(text):
-        if not text:
-            return ""
-        for token in (
-            "<|end|>", "<end_of_turn>", "<|channel|>final", "<channel>final",
-            "<|channel|>answer", "<channel>answer"
-        ):
-            text = text.replace(token, "")
-        return text
+    clean_chunk = staticmethod(clean_chunk)
 
     def _make_messages(self, user_content):
         return [
@@ -2495,62 +2209,6 @@ class LlamaThread(QThread):
 # ==========================================
 # SYNTHÈSE VOCALE LOCALE KOKORO
 # ==========================================
-def markdown_to_spoken_text(text):
-    """Convertit une réponse Markdown en texte naturel avant synthèse vocale."""
-    if not text:
-        return ""
-
-    spoken = html.unescape(str(text)).replace("\r\n", "\n").replace("\r", "\n")
-
-    # Conserve le contenu des blocs de code, mais supprime les délimiteurs et le langage.
-    spoken = re.sub(
-        r"```[^\n]*\n?(.*?)```",
-        lambda match: "\n" + match.group(1).strip() + "\n",
-        spoken,
-        flags=re.DOTALL,
-    )
-    spoken = re.sub(r"~~~[^\n]*\n?(.*?)~~~", lambda match: "\n" + match.group(1).strip() + "\n", spoken, flags=re.DOTALL)
-
-    # Les images deviennent leur texte alternatif et les liens ne gardent que leur libellé.
-    spoken = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", spoken)
-    spoken = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", spoken)
-    spoken = re.sub(r"\[([^\]]+)\]\[[^\]]*\]", r"\1", spoken)
-    spoken = re.sub(r"^\s*\[[^\]]+\]:\s*\S+.*$", "", spoken, flags=re.MULTILINE)
-
-    # Retire les balises HTML éventuelles, sans supprimer leur contenu.
-    spoken = re.sub(r"<br\s*/?>", "\n", spoken, flags=re.IGNORECASE)
-    spoken = re.sub(r"<[^>]+>", " ", spoken)
-
-    # Supprime les séparateurs de tableaux Markdown et transforme les cellules en pauses.
-    spoken = re.sub(r"^\s*\|?\s*:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)+\s*\|?\s*$", "", spoken, flags=re.MULTILINE)
-    spoken = re.sub(r"(?m)^\s*\|\s*", "", spoken)
-    spoken = re.sub(r"(?m)\s*\|\s*$", "", spoken)
-    spoken = spoken.replace("|", ", ")
-
-    # Nettoie les marqueurs de titres, citations, listes et cases à cocher.
-    spoken = re.sub(r"^\s{0,3}#{1,6}\s+", "", spoken, flags=re.MULTILINE)
-    spoken = re.sub(r"^\s{0,3}>+\s?", "", spoken, flags=re.MULTILINE)
-    spoken = re.sub(r"^\s{0,3}#{1,6}\s+", "", spoken, flags=re.MULTILINE)
-    spoken = re.sub(r"^\s*[-+*]\s+\[[ xX]\]\s+", "", spoken, flags=re.MULTILINE)
-    spoken = re.sub(r"^\s*[-+*]\s+", "", spoken, flags=re.MULTILINE)
-    spoken = re.sub(r"^\s*\d+[.)]\s+", "", spoken, flags=re.MULTILINE)
-    spoken = re.sub(r"^\s*(?:-{3,}|\*{3,}|_{3,})\s*$", "", spoken, flags=re.MULTILINE)
-
-    # Retire les marqueurs de mise en forme tout en conservant les mots.
-    spoken = re.sub(r"`([^`]+)`", r"\1", spoken)
-    spoken = re.sub(r"(\*\*\*|___)(.+?)\1", r"\2", spoken, flags=re.DOTALL)
-    spoken = re.sub(r"(\*\*|__)(.+?)\1", r"\2", spoken, flags=re.DOTALL)
-    spoken = re.sub(r"(?<!\w)([*_])([^\n]+?)\1(?!\w)", r"\2", spoken)
-    spoken = re.sub(r"~~(.+?)~~", r"\1", spoken, flags=re.DOTALL)
-    spoken = spoken.replace("\\*", "*").replace("\\_", "_").replace("\\#", "#").replace("\\`", "`")
-
-    # Évite que Piper prononce les derniers caractères Markdown isolés.
-    spoken = re.sub(r"[*`~]+", "", spoken)
-    spoken = re.sub(r"(?m)^\s*#+\s*$", "", spoken)
-    spoken = re.sub(r"[ \t]+", " ", spoken)
-    spoken = re.sub(r"\s*\n\s*", ". ", spoken)
-    spoken = re.sub(r"(?:\.\s*){2,}", ". ", spoken)
-    return spoken.strip(" .")
 
 # ==========================================
 # MOTEUR KOKORO PARTAGÉ (session onnxruntime persistante)
@@ -3006,13 +2664,7 @@ class DocumentAnalysisThread(QThread):
         if agent is not None:
             agent.stop()
 
-    @staticmethod
-    def clean_chunk(text):
-        if not text:
-            return ""
-        for token in ("<|end|>", "<end_of_turn>", "<|channel|>final", "<channel>final"):
-            text = text.replace(token, "")
-        return text
+    clean_chunk = staticmethod(clean_chunk)
 
     def _history_text(self):
         if not self.history:
@@ -5650,171 +5302,11 @@ class AssistantWindow(QWidget):
         self.title_label.setText(title or "…")
         self.title_label.setToolTip(title)
 
-    def parse_audio_response(self, raw_text):
-        """Extrait le transcript pour le titre et masque les balises dans la reponse."""
-        transcript = ""
-        transcript_match = re.search(r"<transcript>(.*?)</transcript>", raw_text, re.IGNORECASE | re.DOTALL)
-        if transcript_match:
-            transcript = re.sub(r"\s+", " ", transcript_match.group(1)).strip()
+    parse_audio_response = staticmethod(parse_audio_response)
+    format_inline_markdown = staticmethod(format_inline_markdown)
+    markdown_to_html = staticmethod(markdown_to_html)
+    split_thinking_and_answer = staticmethod(split_thinking_and_answer)
 
-        answer_match = re.search(r"<answer>(.*?)(?:</answer>|$)", raw_text, re.IGNORECASE | re.DOTALL)
-        if answer_match:
-            answer = answer_match.group(1).strip()
-        elif transcript_match:
-            answer = raw_text[transcript_match.end():]
-            answer = re.sub(r"^\s*<answer>", "", answer, flags=re.IGNORECASE).strip()
-        else:
-            # Tant que la transcription n'est pas terminee, rien n'est affiche dans le corps.
-            answer = "" if re.search(r"<transcript>", raw_text, re.IGNORECASE) else raw_text
-        return transcript, answer
-
-    @staticmethod
-    def format_inline_markdown(text):
-        escaped = html.escape(text, quote=False)
-
-        # Les liens sont protégés avant les substitutions Markdown d'emphase.
-        # Sans cette protection, les underscores présents dans le libellé ou
-        # dans l'URI file:/// sont interprétés comme _italique_ et injectent
-        # des balises <i> à l'intérieur de l'attribut href.
-        protected_links = []
-
-        def protect_link(link_html):
-            token = f"\x00PROTECTEDLINKTOKEN{len(protected_links)}X\x00"
-            protected_links.append(link_html)
-            return token
-
-        def source_link(match):
-            filename = match.group(1).strip().lstrip("-•* ").strip()
-            page = match.group(2)
-            encoded_name = base64.urlsafe_b64encode(
-                filename.encode("utf-8")
-            ).decode("ascii").rstrip("=")
-            return protect_link(
-                f'<a href="source:{page}:{encoded_name}" '
-                f'style="color:#1565C0; text-decoration:underline;">'
-                f'{filename} — p. {page}</a>'
-            )
-
-        escaped = re.sub(
-            r'([^<>\n/\\]+?\.pdf)\s*[—-]\s*(?:p(?:age)?\.?\s*)?(\d+)',
-            source_link,
-            escaped,
-            flags=re.IGNORECASE,
-        )
-
-        def file_link(match):
-            label = match.group(1)
-            uri = match.group(2)
-            return protect_link(
-                f'<a href="{uri}" '
-                f'style="color:#1565C0; text-decoration:underline;">'
-                f'{label}</a>'
-            )
-
-        escaped = re.sub(
-            r'\[([^\]\n]+)\]\((file:///[^)\s]+)\)',
-            file_link,
-            escaped,
-            flags=re.IGNORECASE,
-        )
-        escaped = re.sub(r'`([^`\n]+)`', r'<code style="background-color:rgba(0,0,0,18); padding:1px 4px; border-radius:4px; font-family:Consolas, monospace;">\1</code>', escaped)
-        escaped = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', escaped)
-        escaped = re.sub(r'__(.+?)__', r'<b>\1</b>', escaped)
-        escaped = re.sub(r'(?<!\*)\*([^*\n]+)\*(?!\*)', r'<i>\1</i>', escaped)
-        escaped = re.sub(r'(?<!_)_([^_\n]+)_(?!_)', r'<i>\1</i>', escaped)
-        escaped = escaped.replace('**', '').replace('__', '')
-
-        for index, link_html in enumerate(protected_links):
-            escaped = escaped.replace(
-                f"\x00PROTECTEDLINKTOKEN{index}X\x00",
-                link_html,
-            )
-        return escaped
-
-    def markdown_to_html(self, markdown_text):
-        lines = markdown_text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
-        output = []
-        paragraph = []
-        list_type = None
-        in_code = False
-        code_lines = []
-
-        def close_paragraph():
-            if paragraph:
-                joined = '<br>'.join(self.format_inline_markdown(line) for line in paragraph)
-                output.append(f'<p style="margin:0 0 8px 0;">{joined}</p>')
-                paragraph.clear()
-
-        def close_list():
-            nonlocal list_type
-            if list_type:
-                output.append(f'</{list_type}>')
-                list_type = None
-
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith('```'):
-                close_paragraph()
-                close_list()
-                if in_code:
-                    code = html.escape('\n'.join(code_lines), quote=False)
-                    output.append('<pre style="margin:4px 0 8px 0; padding:8px; background-color:rgba(0,0,0,18); border-radius:6px; white-space:pre-wrap; font-family:Consolas, monospace;">' f'{code}</pre>')
-                    code_lines.clear()
-                    in_code = False
-                else:
-                    in_code = True
-                continue
-            if in_code:
-                code_lines.append(line)
-                continue
-            if not stripped:
-                close_paragraph()
-                close_list()
-                continue
-            heading = re.match(r'^(#{1,3})\s+(.+)$', stripped)
-            if heading:
-                close_paragraph()
-                close_list()
-                size = {1: 18, 2: 16, 3: 14}[len(heading.group(1))]
-                title = self.format_inline_markdown(heading.group(2))
-                output.append(f'<div style="font-size:{size}px; font-weight:600; margin:6px 0 4px 0;">{title}</div>')
-                continue
-            bullet = re.match(r'^[-+*]\s+(.+)$', stripped)
-            numbered = re.match(r'^\d+[.)]\s+(.+)$', stripped)
-            if bullet or numbered:
-                close_paragraph()
-                wanted_type = 'ul' if bullet else 'ol'
-                if list_type != wanted_type:
-                    close_list()
-                    list_type = wanted_type
-                    output.append(f'<{list_type} style="margin:2px 0 8px 0; padding-left:22px;">')
-                item = bullet.group(1) if bullet else numbered.group(1)
-                output.append(f'<li style="margin:2px 0;">{self.format_inline_markdown(item)}</li>')
-                continue
-            close_list()
-            paragraph.append(line)
-
-        if in_code:
-            code = html.escape('\n'.join(code_lines), quote=False)
-            output.append('<pre style="margin:4px 0 8px 0; padding:8px; background-color:rgba(0,0,0,18); border-radius:6px; white-space:pre-wrap; font-family:Consolas, monospace;">' f'{code}</pre>')
-        close_paragraph()
-        close_list()
-        return ''.join(output)
-
-    def split_thinking_and_answer(self, raw_text):
-        normalized = re.sub(r'</think>\s*<think>', '', raw_text, flags=re.IGNORECASE)
-        thinking_parts = []
-        def extract_complete(match):
-            thinking_parts.append(match.group(1))
-            return ''
-        answer = re.sub(r'<think>(.*?)</think>', extract_complete, normalized, flags=re.IGNORECASE | re.DOTALL)
-        open_match = re.search(r'<think>(.*)$', answer, flags=re.IGNORECASE | re.DOTALL)
-        if open_match:
-            thinking_parts.append(open_match.group(1))
-            answer = answer[:open_match.start()]
-        answer = re.sub(r'</?think>', '', answer, flags=re.IGNORECASE)
-        thinking = '\n'.join(part.strip() for part in thinking_parts if part.strip())
-        return thinking.strip(), answer.strip()
 
     def render_response(self, status_text=""):
         if status_text:
