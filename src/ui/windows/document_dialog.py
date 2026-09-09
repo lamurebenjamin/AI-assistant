@@ -209,9 +209,19 @@ class DocumentDialog(QDialog):
         close.clicked.connect(self.reject)
         header_layout.addWidget(close); root.addWidget(header)
 
-        self.header_separator=QFrame(); self.header_separator.setFixedHeight(1); self.header_separator.setStyleSheet("background:rgba(0,0,0,35);border:none;")
-        root.addWidget(self.header_separator)
-        self.content_widget=QWidget(); content=QVBoxLayout(self.content_widget); content.setContentsMargins(10,4,10,10); content.setSpacing(4)
+        self.separator_container = QWidget(self.panel)
+        sep_layout = QHBoxLayout(self.separator_container)
+        sep_layout.setContentsMargins(12, 0, 12, 0)
+        sep_layout.setSpacing(0)
+        self.header_separator = QFrame(self.separator_container)
+        self.header_separator.setFixedHeight(1)
+        self.header_separator.setStyleSheet("background:rgba(0,0,0,35);border:none;")
+        sep_layout.addWidget(self.header_separator)
+        root.addWidget(self.separator_container)
+        self.content_widget = QWidget()
+        content = QVBoxLayout(self.content_widget)
+        content.setContentsMargins(10, 8, 10, 8)
+        content.setSpacing(4)
 
         self.drop_zone=QPushButton(self.content_widget); self.drop_zone.setObjectName("ActionIconButton")
         self.drop_zone.setIcon(create_svg_icon('<path d="M12 5v14M5 12h14"/>','#111111',1.8)); self.drop_zone.setIconSize(QSize(20,20)); self.drop_zone.setFixedHeight(42)
@@ -638,8 +648,8 @@ class DocumentDialog(QDialog):
         # The response and composer are stacked vertically. Computing the height
         # explicitly avoids the conversation being painted behind the composer.
         header_h = 36
-        separator_h = 1 if self.header_separator.isVisible() else 0
-        top_bottom_margins = 14
+        separator_h = 1 if self.separator_container.isVisible() else 0
+        top_bottom_margins = 16
         content_spacing = 4 if response_h else 0
         composer_h = max(38, self.composer.sizeHint().height())
         target = header_h + separator_h + top_bottom_margins + content_spacing + response_h + composer_h + 2
@@ -739,12 +749,12 @@ class DocumentDialog(QDialog):
         self.setMinimumHeight(collapsed_height)
         if self.is_collapsed:
             target = max(self.MIN_HEIGHT, self.expanded_height)
-            self.header_separator.show()
+            self.separator_container.show()
             self.content_widget.show()
             expanding = True
         else:
             self.expanded_height = max(self.MIN_HEIGHT, current)
-            self.header_separator.hide()
+            self.separator_container.hide()
             target = collapsed_height
             expanding = False
 

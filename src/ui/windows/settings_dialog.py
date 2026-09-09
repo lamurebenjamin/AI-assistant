@@ -129,10 +129,15 @@ class SettingsDialog(QDialog):
         header_layout.addWidget(close_btn, 0, Qt.AlignVCenter)
         panel_layout.addWidget(header)
 
-        separator = QFrame(self.panel)
+        self.separator_wrapper = QWidget(self.panel)
+        sep_layout = QHBoxLayout(self.separator_wrapper)
+        sep_layout.setContentsMargins(12, 0, 12, 0)
+        sep_layout.setSpacing(0)
+        separator = QFrame(self.separator_wrapper)
         separator.setFixedHeight(1)
         separator.setStyleSheet("background: rgba(0,0,0,35); border: none;")
-        panel_layout.addWidget(separator)
+        sep_layout.addWidget(separator)
+        panel_layout.addWidget(self.separator_wrapper)
 
         content_widget = QWidget(self.panel)
         content_widget.setObjectName("SettingsContent")

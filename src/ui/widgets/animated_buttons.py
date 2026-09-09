@@ -1,5 +1,5 @@
-"""Boutons interactifs avec animations vectorielles fluides."""
-
+import math
+import random
 import numpy as np
 from PyQt5.QtCore import (
     QEasingCurve,
@@ -9,9 +9,10 @@ from PyQt5.QtCore import (
     QRectF,
     QSize,
     Qt,
+    QTimer,
     pyqtProperty,
 )
-from PyQt5.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen
+from PyQt5.QtGui import QBrush, QColor, QIcon, QLinearGradient, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import QPushButton, QToolTip
 
 from src.ui.design_tokens import COLOR_TEXT_PRIMARY
@@ -160,17 +161,35 @@ class AnimatedComposerButton(QPushButton):
 
 
 class AnimatedHeaderButton(QPushButton):
-    """Bouton d'en-tête circulaire moderne avec animation fluide de survol."""
+    """Bouton d'en-tête circulaire moderne avec animation fluide de survol et remplissage audio."""
 
     BUTTON_SIZE = QSize(28, 28)
     HOVER_DIAMETER = 26.0
 
-    def __init__(self, icon: QIcon = None, tooltip: str = "", parent=None):
+    def __init__(
+        self,
+        icon: QIcon = None,
+        tooltip: str = "",
+        parent=None,
+        is_audio: bool = False,
+    ):
         super().__init__(parent)
+        self.is_audio = is_audio
         self._progress = 0.0
+        self._audio_fill = 0.0
+        self._audio_target = 0.0
+        self._phase = 0.0
+        self._is_hovered = False
+        self._icon_filled = None
         self._animation = QPropertyAnimation(self, b"animationProgress", self)
         self._animation.setDuration(160)
         self._animation.setEasingCurve(QEasingCurve.OutCubic)
+
+        if self.is_audio:
+            self._audio_timer = QTimer(self)
+            self._audio_timer.setInterval(30)
+            self._audio_timer.timeout.connect(self._step_audio_animation)
+
         self.setFixedSize(self.BUTTON_SIZE)
         self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
@@ -179,6 +198,22 @@ class AnimatedHeaderButton(QPushButton):
         if tooltip:
             self.setToolTip(tooltip)
         self.setStyleSheet("background: transparent; border: none; padding: 0; margin: 0;")
+
+    def _step_audio_animation(self) -> None:
+        """Anime le niveau de remplissage de gauche à droite de manière fluide et aléatoire."""
+        if self._is_hovered:
+            self._phase += 0.14
+            # Somme d'harmoniques et léger jitter pour un mouvement vivant de signal audio
+            base = 0.60 + 0.26 * math.sin(self._phase * 1.7) + 0.12 * math.sin(self._phase * 3.4 + 0.6)
+            jitter = (random.random() - 0.5) * 0.08
+            self._audio_target = max(0.25, min(0.95, base + jitter))
+            self._audio_fill += (self._audio_target - self._audio_fill) * 0.32
+        else:
+            self._audio_fill += (0.0 - self._audio_fill) * 0.28
+            if self._audio_fill < 0.01:
+                self._audio_fill = 0.0
+                self._audio_timer.stop()
+        self.update()
 
     def setIcon(self, icon: QIcon) -> None:
         self._icon = icon
@@ -199,17 +234,24 @@ class AnimatedHeaderButton(QPushButton):
     )
 
     def enterEvent(self, event) -> None:
+        self._is_hovered = True
         self._animation.stop()
         self._animation.setStartValue(self._progress)
         self._animation.setEndValue(1.0)
         self._animation.start()
+        if self.is_audio:
+            if not self._audio_timer.isActive():
+                self._audio_timer.start()
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
+        self._is_hovered = False
         self._animation.stop()
         self._animation.setStartValue(self._progress)
         self._animation.setEndValue(0.0)
         self._animation.start()
+        if self.is_audio:
+            self._audio_target = 0.0
         super().leaveEvent(event)
 
     def event(self, event) -> bool:
@@ -224,11 +266,41 @@ class AnimatedHeaderButton(QPushButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
         center = QPointF(self.width() / 2.0, self.height() / 2.0)
+        d = self.HOVER_DIAMETER
+        circle = QRectF(center.x() - d / 2.0, center.y() - d / 2.0, d, d)
 
-        # Rond de survol animé avec opacité progressive
-        if self._progress > 0.001 or self.isDown():
-            d = self.HOVER_DIAMETER
-            circle = QRectF(center.x() - d / 2.0, center.y() - d / 2.0, d, d)
+        # Fond et remplissage animé
+        if self.is_audio and (self._audio_fill > 0.001 or self._progress > 0.001 or self.isDown()):
+            # Fond circulaire léger de base
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(0, 0, 0, 16 if not self.isDown() else 35))
+            painter.drawEllipse(circle)
+
+            # Remplissage de gauche à droite oscillant
+            if self._audio_fill > 0.001:
+                painter.save()
+                clip_path = QPainterPath()
+                clip_path.addEllipse(circle)
+                painter.setClipPath(clip_path)
+
+                fill_w = circle.width() * self._audio_fill
+                fill_rect = QRectF(circle.x(), circle.y(), fill_w, circle.height())
+                grad = QLinearGradient(circle.x(), 0, circle.right(), 0)
+                grad.setColorAt(0.0, QColor(0, 0, 0, 22))
+                grad.setColorAt(max(0.0, min(1.0, self._audio_fill)), QColor(0, 0, 0, 48))
+                painter.setBrush(QBrush(grad))
+                painter.setPen(Qt.NoPen)
+                painter.drawRect(fill_rect)
+
+                # Fin trait d'onde au front de remplissage
+                painter.setPen(QPen(QColor(0, 0, 0, 60), 1.2, Qt.SolidLine, Qt.RoundCap))
+                painter.drawLine(
+                    QPointF(circle.x() + fill_w, circle.top() + 3),
+                    QPointF(circle.x() + fill_w, circle.bottom() - 3),
+                )
+                painter.restore()
+        elif self._progress > 0.001 or self.isDown():
+            # Rond de survol standard avec opacité progressive
             alpha = 35 if self.isDown() else int(22 * self._progress)
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(0, 0, 0, alpha))
@@ -246,6 +318,20 @@ class AnimatedHeaderButton(QPushButton):
                 icon_sz.height(),
             )
             self._icon.paint(painter, rect.toRect(), Qt.AlignCenter)
+
+            # Remplissage synchronisé de l'icône son de gauche à droite
+            if self.is_audio and self._audio_fill > 0.001:
+                if self._icon_filled is None:
+                    from src.ui.icons import ICONS_DARK
+                    self._icon_filled = ICONS_DARK.get("speak_filled")
+                if self._icon_filled is not None and not self._icon_filled.isNull():
+                    painter.save()
+                    fill_w = circle.width() * self._audio_fill
+                    painter.setClipRect(
+                        QRectF(circle.x(), circle.y(), fill_w, circle.height())
+                    )
+                    self._icon_filled.paint(painter, rect.toRect(), Qt.AlignCenter)
+                    painter.restore()
 
         painter.end()
 
