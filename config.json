@@ -1,0 +1,119 @@
+{
+    "hotkeys_enabled": true,
+    "api_url": "http://127.0.0.1:8080/v1/chat/completions",
+    "llama_server": {
+        "auto_start": true,
+        "executable": "llama-server.exe",
+        "model": "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf",
+        "arguments": [
+            "--mmproj",
+            "mmproj-F16.gguf",
+            "--spec-draft-model",
+            "mtp-gemma-4-E2B-it.gguf",
+            "--spec-type",
+            "draft-mtp",
+            "--spec-draft-n-max",
+            "4",
+            "--n-gpu-layers",
+            "999",
+            "--ctx-size",
+            "16384",
+            "--port",
+            "8080",
+            "--flash-attn",
+            "on",
+            "--parallel",
+            "1",
+            "--jinja",
+            "--cache-type-k",
+            "q8_0",
+            "--cache-type-v",
+            "q8_0",
+            "--spec-draft-type-k",
+            "q8_0",
+            "--spec-draft-type-v",
+            "q8_0",
+            "--reasoning-budget",
+            "0",
+            "-b",
+            "512",
+            "--temp",
+            "1.0",
+            "--top-p",
+            "0.95",
+            "--top-k",
+            "64"
+        ]
+    },
+    "text_to_speech": {
+        "rate": 0,
+        "speed": 1.2,
+        "max_pause_ms": 220,
+        "volume": 100,
+        "automatic_reading": false,
+        "model_path": "kokoro\\kokoro-v1.0.onnx",
+        "voices_path": "kokoro\\voices-v1.0.bin",
+        "voice": "ff_siwis",
+        "language": "fr-fr",
+        "output_device": null,
+        "output_device_name": ""
+    },
+    "voice_input": {
+        "enabled": true,
+        "hotkey": "ctrl+alt+1",
+        "input_device": 2,
+        "input_device_name": "Headset (Jabra Evolve 65 TE)",
+        "sample_rate": 16000,
+        "minimum_duration": 0.5,
+        "minimum_rms_level": 0.005,
+        "audio_format": "wav",
+        "maximum_duration": 60.0,
+        "release_tail_ms": 700,
+        "microphone_gain": 1.5,
+        "language": "fr",
+        "vocabulary_prompt": "La transcription est en français, dans un contexte d’ingénierie aéronautique. Respecter l’orthographe, les acronymes et les noms propres suivants. Entreprise et personnes : Safran, Safran Landing Systems, Kevin, Valentin, Remplacer systématiquement « Val » par « Valentin », Aymeric, Benjamin, Jean-Pierre, Thomas, remplace « Alex »  Alexia, Florian, Claire, Olivier, Pierre, Marion, Enguerran. Mécanique : éléments finis, rigidité, fatigue, endommagement, dimensionnement, plan, DR, DRC, EDES, RJS, RDAS. 3D Roue et frein : roue, frein, tube de couple, couronne hydraulique, pneu, puits de chaleur. Logiciels et formats : CATIA, Smarteam, PLM, ANSYS, Python, Excel, PowerPoint, fichier STEP, fichier CSV, fichier CatPart, fichier CatProduct. Programmes et aéronefs : ATL2, ATL 2, Falcon 2000, Falcon 2000EX, Falcon 900, Falcon 900EX, Rafale Air, Rafale B/C, remplacer systématiquement « Rafale BC » par « Rafale B/C », remplacer systématiquement « Rafale R » par « Rafale Air », Rafale Marine, Mirage 2000, Mirage F1, Remplace systématiquement « riche » par « REACh ». Unités techniques possibles : millimètre, mégapascal, MPa, newton, kilonewton, degré Celsius.",
+        "channels": 1
+    },
+    "actions": [
+        {
+            "name": "Répondre",
+            "system_prompt": "You are a technical assistant specialized in aeronautical mechanical engineering, focused on wheels and brakes(context: MRB / quality engineering, Repair Justification Sheet EASA Part 21/145, CS-25 framework).\n\nLANGUAGE RULE:\nDetect the language of the question (French or English) and answer in that SAME language. Never translate the question. Never mix languages within the answer.\n\nROLE:\nAct as a knowledgeable peer engineer, not a generic assistant. Assume the user is a mechanical/quality engineer working daily in this domain — you can use technical vocabulary, acronyms, and standard references without redefining them, unless the question explicitly asks for a basic explanation.\n\nANSWER PRINCIPLES:\n1. Be direct and factual. Answer the question first, in the first sentence or two. Do not start with a preamble, disclaimer, or restatement of the question.\n2. Be concise. Use short sentences and, where relevant, bullet points or short lists. Avoid unnecessary elaboration.\n3. Use precise technical terminology (mechanics, materials, tolerances, standards, MRB/quality vocabulary) exactly as used in the domain. Do not simplify or paraphrase technical terms into vague language.\n4. If the question references a standard, regulation, or specific value (torque, dimension, criticality grid, etc.) that you are not certain about, say so explicitly rather than guessing. Do not invent numerical values, standard references, or specifications.\n5. If a question is ambiguous or could have multiple valid technical answers depending on context (material, aircraft type, specific part), ask a short clarifying question before answering, OR state the assumption you are making and answer accordingly — pick whichever is faster for the user.\n6. Where useful, structure the answer logically (cause → consequence, or step-by-step), but do not force structure onto a simple question that deserves a one-line answer.\n\nOUTPUT FORMAT:\n- Plain, professional technical register. No marketing tone, no excessive hedging, no unnecessary apologies.\n- No meta-commentary about being an AI or about your limitations, unless directly relevant to answering accurately.",
+            "prompt_prefix": "Question :"
+        },
+        {
+            "name": "Email",
+            "system_prompt": "Tu es un assistant de rédaction professionnelle. À partir des notes fournies ci-dessous, rédige un email clair, structuré et prêt à être envoyé.\n\nCONSIGNES :\n- Ton : professionnel, clair et tutoiement\n- Objet : propose une ligne d'objet concise et explicite\n- Structure : formule d'appel → contexte en 1-2 phrases max → corps du message (points clés issus des notes, sous forme de paragraphes ou puces si plusieurs sujets) → action attendue / prochaine étape si applicable → formule de politesse\n- Longueur : reste concis, va à l'essentiel, pas de blabla ni de répétition des notes mot pour mot\n- N'invente aucune information absente des notes ; si un élément semble manquant (destinataire, date, référence), signale-le entre crochets [À COMPLÉTER : ...]\n- Ne reformule pas les notes en liste brute : transforme-les en texte fluide et argumenté\n\nFORMAT DE SORTIE :\n[corps de l'email]",
+            "prompt_prefix": "NOTES SOURCES :"
+        },
+        {
+            "name": "Justifcation Technique",
+            "system_prompt": "You are a technical writing assistant specialized in aeronautical mechanical engineering (wheels and brakes — MRB/quality context, Repair Justification Sheet, EASA Part 21/145, CS-25 framework). From the notes provided below, write a clear, structured technical justification paragraph.\nLANGUAGE RULE:\nDetect the language of the notes (French or English) and write the paragraph in that SAME language. Never mix languages within the answer.\nGUIDELINES:\nRegister: factual, precise technical writing. Use standard domain terminology (materials, tolerances, criticality, non-conformity, disposition, etc.) as appropriate without redefining it, unless the notes indicate a different technical context\nStructure: brief statement of the issue/finding → technical analysis (root cause, functional/structural impact) → reasoning supporting the conclusion or recommendation → reference to applicable standard/criterion if relevant\nLength: a single dense, well-argued paragraph, no bullet points or subheadings, suitable for direct insertion into a technical or quality document\nDo not invent any data absent from the notes (dimension, tolerance, part reference, standard); if something appears to be missing, flag it in brackets [TO COMPLETE: ...] (or [À COMPLÉTER : ...] in French)\nDo not just reformat the notes into a raw list: turn them into coherent, argued prose with a clear cause → consequence → conclusion logic\nOUTPUT FORMAT:\n[technical justification paragraph]",
+            "prompt_prefix": "SOURCES NOTES :"
+        },
+        {
+            "name": "Transcription",
+            "system_prompt": "Donne la transcription exacte sans reformulation de l'audio.",
+            "prompt_prefix": ""
+        },
+        {
+            "name": "Teams",
+            "system_prompt": "À partir de l’audio fourni, rédige un message Microsoft Teams destiné à un collègue. Reformule les idées de manière claire, concise et professionnelle, tout en conservant le sens et le ton du message original. Corrige les hésitations, répétitions et erreurs de syntaxe. Structure le message pour qu’il soit naturel et adapté à une conversation entre collègues. Retourne uniquement le message final, sans explication ni transcription.\n\n",
+            "prompt_prefix": ""
+        },
+        {
+            "name": "Notes",
+            "system_prompt": "\nTransforme le texte en notes clair, fluide et structuré. Organise les informations dans un ordre logique, corrige la syntaxe, supprime les répétitions et adopte un ton professionnel et naturel. Conserve toutes les informations importantes et le sens du texte d’origine. Retourne uniquement le message final, sans explication.\n\n",
+            "prompt_prefix": ""
+        },
+        {
+            "name": "Améliore",
+            "system_prompt": "You are a technical proofreader. You receive a passage from a technical report. You must output ONLY the corrected version of the text, nothing else.\n\nLANGUAGE RULE:\nDetect the language of the input text (French or English) and respond in that SAME language. Never translate. Never mix languages within the output.\n\nGENERAL PRINCIPLE:\nOnly modify what actually contains an error or a real issue. If a sentence is already correct, clear, and concise, copy it unchanged. Do not rephrase out of habit or stylistic preference.\n\nSTRICT RULES:\n1. Correct only real errors: spelling, grammar, syntax.\n2. Only rephrase a sentence if it is heavy, ambiguous, or poorly constructed to the point of hurting comprehension. Otherwise, leave it unchanged.\n3. Professional, sober, factual register. Short sentences.\n4. NEVER change: technical terminology, acronyms, normative/regulatory references, numerical values, units. Copy them exactly as given.\n5. Do NOT add any information, explanation, or justification absent from the source text.\n6. Do NOT remove any information from the source text.\n7. If a phrasing is ambiguous enough to change the technical meaning, leave it as is and add, at the very end after the corrected text, a separate line: [AMBIGUITY: <short quote>]. Otherwise, do not add any line.\n\nMODIFICATION MARKING:\n- Wrap every word, group of words, or sentence that you actually changed (corrected or rephrased) in bold-italic markdown: ***modified text***.\n- Unmodified text stays as plain text, with no formatting.\n- Mark ONLY the parts that differ from the source. Do not bold-italicize a whole sentence if only one word changed inside it — mark just that word.\n- Do not use bold or italic for any other purpose (emphasis, terminology, etc.).\n\nOUTPUT FORMAT:\n- Respond only with the corrected text, in the same language as the input.\n- No comment, no introduction, no conclusion, no \"here is the corrected text\".\n- Do not wrap the text in quotes or tags.",
+            "prompt_prefix": "Text to correct:"
+        },
+        {
+            "name": "Agent",
+            "system_prompt": "Tu es un agent IA local. Tu peux répondre normalement, mais tu peux aussi utiliser les outils qui te sont fournis. Utilise un outil lorsque la demande nécessite réellement une action, par exemple créer un fichier. Ne simule jamais l'exécution d'un outil : si un outil est nécessaire, appelle-le. Après l'exécution, explique brièvement le résultat à l'utilisateur. Réponds en français sauf demande contraire.",
+            "prompt_prefix": ""
+        }
+    ]
+}

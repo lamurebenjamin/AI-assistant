@@ -1,0 +1,23 @@
+﻿# Moteur GUI & Raccourcis
+PyQt5
+keyboard
+pyperclip
+
+# Traitement Audio & Maths
+sounddevice
+numpy
+scipy
+
+# Synthèse Vocale (TTS) & ONNX
+kokoro-onnx
+onnxruntime-gpu
+
+# Réseau & Images
+Pillow
+requests
+
+# Compétences Bureautiques (Skills)
+python-docx
+openpyxl
+reportlab
+python-pptx

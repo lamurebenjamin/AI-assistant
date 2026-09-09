@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+env/
+venv/
+
+# Modèles volumineux & binaires locaux
+*.gguf
+*.dll
+*.exe
+*.onnx
+*.bin
+kokoro/
+llama-server.log
+output/
+document_history.json
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+Thumbs.db
