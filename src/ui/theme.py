@@ -76,6 +76,30 @@ def apply_rounded_corners(hwnd: int) -> None:
         pass
 
 
+from PyQt5.QtCore import QEvent, QObject, Qt
+from PyQt5.QtGui import QColor, QPalette
+from PyQt5.QtWidgets import QToolTip
+
+
+class CleanToolTipFilter(QObject):
+    """Évite le bug de rectangle noir sous Windows.
+
+    Par défaut, Qt passe le widget survolé à QTipLabel, qui copie sa palette.
+    Sur les fenêtres translucides ou avec fond transparent, cette palette
+    contient QColor(0,0,0,0), ce qui provoque un rendu noir opaque sous Windows.
+    En passant widget=None à QToolTip.showText(), le tooltip utilise la palette
+    globale blanche opaque de l'application sans aucun artefact.
+    """
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.ToolTip:
+            text = watched.toolTip() if hasattr(watched, "toolTip") else ""
+            if text:
+                QToolTip.showText(event.globalPos(), text, None)
+                return True
+        return super().eventFilter(watched, event)
+
+
 def apply_light_popup_theme(app) -> None:
     """Force les menus Qt, y compris Copier/Coller, en thème clair.
 
@@ -93,7 +117,7 @@ def apply_light_popup_theme(app) -> None:
     palette.setColor(QPalette.ButtonText, QColor(COLOR_TEXT_PRIMARY))
     palette.setColor(QPalette.Highlight, QColor(COLOR_PRIMARY_LIGHT))
     palette.setColor(QPalette.HighlightedText, QColor(COLOR_TEXT_PRIMARY))
-    palette.setColor(QPalette.ToolTipBase, QColor(COLOR_BG_SURFACE))
+    palette.setColor(QPalette.ToolTipBase, QColor("#FFFFFF"))
     palette.setColor(QPalette.ToolTipText, QColor(COLOR_TEXT_PRIMARY))
     palette.setColor(QPalette.Disabled, QPalette.Text, QColor(COLOR_TEXT_MUTED))
     palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor(COLOR_TEXT_MUTED))
@@ -142,3 +166,6 @@ def apply_light_popup_theme(app) -> None:
         }}
     """
     )
+    if not hasattr(app, "_clean_tooltip_filter"):
+        app._clean_tooltip_filter = CleanToolTipFilter(app)
+        app.installEventFilter(app._clean_tooltip_filter)

@@ -3,6 +3,7 @@
 import numpy as np
 from PyQt5.QtCore import (
     QEasingCurve,
+    QEvent,
     QPointF,
     QPropertyAnimation,
     QRectF,
@@ -11,7 +12,7 @@ from PyQt5.QtCore import (
     pyqtProperty,
 )
 from PyQt5.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen
-from PyQt5.QtWidgets import QPushButton
+from PyQt5.QtWidgets import QPushButton, QToolTip
 
 from src.ui.design_tokens import COLOR_TEXT_PRIMARY
 
@@ -68,6 +69,14 @@ class AnimatedComposerButton(QPushButton):
         self._animate_to(0.0)
         self.update()
         super().leaveEvent(event)
+
+    def event(self, event) -> bool:
+        if event.type() == QEvent.ToolTip:
+            tip = self.toolTip()
+            if tip:
+                QToolTip.showText(event.globalPos(), tip, None)
+                return True
+        return super().event(event)
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -202,6 +211,14 @@ class AnimatedHeaderButton(QPushButton):
         self._animation.setEndValue(0.0)
         self._animation.start()
         super().leaveEvent(event)
+
+    def event(self, event) -> bool:
+        if event.type() == QEvent.ToolTip:
+            tip = self.toolTip()
+            if tip:
+                QToolTip.showText(event.globalPos(), tip, None)
+                return True
+        return super().event(event)
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
