@@ -5,6 +5,8 @@ from PyQt5.QtCore import QRectF, Qt, QTimer
 from PyQt5.QtGui import QColor, QPainter
 from PyQt5.QtWidgets import QWidget
 
+from src.ui.design_tokens import COLOR_AUDIO_ACTIVE, COLOR_AUDIO_IDLE
+
 
 class LiveAudioIndicator(QWidget):
     """Animation moderne et réactive au niveau sonore du microphone."""
@@ -53,7 +55,7 @@ class LiveAudioIndicator(QWidget):
         x0 = (self.width() - total_width) / 2.0
         center_y = self.height() / 2.0
         audible = self._display_level > 0.025
-        base_color = QColor("#0A68D8" if audible else "#8993A0")
+        base_color = QColor(COLOR_AUDIO_ACTIVE if audible else COLOR_AUDIO_IDLE)
         for index in range(bar_count):
             distance = abs(index - (bar_count - 1) / 2.0)
             shape = max(0.25, 1.0 - distance / 8.0)

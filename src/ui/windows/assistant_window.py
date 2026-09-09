@@ -1,6 +1,7 @@
 """Fenêtre flottante principale de l'assistant IA avec fond acrylique et gestion du dialogue."""
 
 import copy
+import html
 import json
 import os
 import re
@@ -51,13 +52,34 @@ from src.config.schema import APP_DIR, DEFAULT_CONFIG, LOGGER
 from src.documents.pdf_utils import open_pdf_at_page as _open_pdf_at_page
 from src.documents.thread import DocumentAnalysisThread
 from src.llm.client import LlamaThread
+from src.llm.response_parser import parse_audio_response, split_thinking_and_answer
 from src.llm.server_manager import get_server_manager
 from src.monitoring.runtime_info import RuntimeInfoThread
 from src.monitoring.server_status import ServerStatusThread
-from src.rendering.markdown import markdown_to_spoken_text
+from src.rendering.markdown import format_inline_markdown, markdown_to_html, markdown_to_spoken_text
 from src.tts.thread import KokoroTtsThread, KokoroWarmupThread
-from src.ui.icons import ICONS_DARK, create_svg_icon
+from src.ui.design_tokens import (
+    COLOR_BG_SURFACE,
+    COLOR_BORDER,
+    COLOR_BORDER_SUBTLE,
+    COLOR_PRESS_DARK,
+    COLOR_PRIMARY,
+    COLOR_PRIMARY_LIGHT,
+    COLOR_TEXT_INVERSE,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY,
+    FONT_DISPLAY,
+    FONT_TEXT,
+    RADIUS_SM,
+    RADIUS_MD,
+    RADIUS_XL,
+    SIZE_LG,
+    SIZE_SM,
+)
+from src.ui.icons import ICONS_DARK, get_logo_pixmap
+from src.ui.stylesheet import build_acrylic_window_qss
 from src.ui.theme import apply_acrylic_blur, apply_rounded_corners
+from src.ui.widgets.animated_buttons import AnimatedHeaderButton
 from src.ui.widgets.recording_indicator import RecordingIndicator
 from src.ui.windows.document_dialog import DocumentDialog
 from src.ui.windows.runtime_info_dialog import RuntimeInfoDialog
@@ -250,37 +272,12 @@ class AssistantWindow(QWidget):
 
         self.panel = QFrame(self)
         self.panel.setObjectName("AcrylicPanel")
-        self.panel.setStyleSheet("""
-            QFrame#AcrylicPanel {
-                background-color: rgba(255, 255, 255, 34);
-                border: 1px solid rgba(255, 255, 255, 60);
-                border-radius: 16px;
-            }
-            QFrame#Header {
-                background-color: transparent;
-                border: none;
-            }
-            QLabel#TitleLabel {
-                background: transparent; color: #171717; border: none; padding: 0;
-                font-family: 'Aptos Display', 'Segoe UI Variable Display', 'Segoe UI', Arial; font-size: 13px; font-weight: 700;
-            }
-            QPushButton#HeaderIconButton {
-                background-color: transparent;
-                border: none;
-                border-radius: 14px;
-                padding: 0;
-                margin: 0;
-                text-align: center;
-            }
-            QPushButton#HeaderIconButton:hover,
-            QPushButton#HeaderIconButton:pressed,
-            QPushButton#HeaderIconButton:focus { background: transparent; border: none; outline: none; }
-            QScrollArea, QScrollArea QWidget, QScrollArea QViewport { background: transparent; border: none; }
-            QScrollBar:vertical { background: rgba(0, 0, 0, 14); width: 10px; margin: 4px 3px 8px 0; border-radius: 5px; }
-            QScrollBar::handle:vertical { background: rgba(30, 30, 30, 85); min-height: 26px; border-radius: 4px; }
-            QScrollBar::handle:vertical:hover { background: rgba(30, 30, 30, 135); }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical, QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { height: 0; background: transparent; }
-        """)
+        self.panel.setStyleSheet(
+            build_acrylic_window_qss()
+            + f"""
+            QScrollBar:horizontal {{ height: 0; }}
+            """
+        )
 
         panel_layout = QVBoxLayout(self.panel)
         panel_layout.setContentsMargins(0, 0, 0, 0)
@@ -300,20 +297,7 @@ class AssistantWindow(QWidget):
         self.header_icon_label = QLabel(header)
         self.header_icon_label.setFixedSize(18, 18)
         self.header_icon_label.setAlignment(Qt.AlignCenter)
-        header_icon_path = os.path.join(
-            APP_DIR,
-            "assistant_icon.webp"
-        )
-        header_icon = QIcon(header_icon_path)
-        if header_icon.isNull():
-            fallback_svg = (
-                '<path d="M12 1.5C11.2 7.5 7.5 11.2 1.5 12 '
-                'C7.5 12.8 11.2 16.5 12 22.5 '
-                'C12.8 16.5 16.5 12.8 22.5 12 '
-                'C16.5 11.2 12.8 7.5 12 1.5z"/>'
-            )
-            header_icon = create_svg_icon(fallback_svg, "#FFFFFF")
-        self.header_icon_label.setPixmap(header_icon.pixmap(16, 16))
+        self.header_icon_label.setPixmap(get_logo_pixmap(16, APP_DIR))
         header_layout.addWidget(self.header_icon_label, 0, Qt.AlignVCenter)
 
         self.title_label = QLabel("Transcript", header)
@@ -322,50 +306,24 @@ class AssistantWindow(QWidget):
         self.title_label.setTextFormat(Qt.PlainText)
         header_layout.addWidget(self.title_label, 1)
 
-        self.speak_button = QPushButton(header)
-        self.speak_button.setObjectName("HeaderIconButton")
-        self.speak_button.setFlat(True)
-        self.speak_button.setIcon(ICONS_DARK["speak"])
+        self.speak_button = AnimatedHeaderButton(ICONS_DARK["speak"], "Lire la réponse à haute voix", header)
         self.speak_button.setIconSize(QSize(18, 18))
-        self.speak_button.setFixedSize(27, 28)
-        self.speak_button.setToolTip("Lire la réponse à haute voix")
-        self.speak_button.setCursor(Qt.PointingHandCursor)
         self.speak_button.clicked.connect(self.toggle_speech)
         header_layout.addWidget(self.speak_button, 0, Qt.AlignVCenter)
 
-        self.copy_button = QPushButton(header)
-        self.copy_button.setObjectName("HeaderIconButton")
-        self.copy_button.setFlat(True)
-        self.copy_button.setAutoFillBackground(False)
-        self.copy_button.setIcon(ICONS_DARK["copy"])
+        self.copy_button = AnimatedHeaderButton(ICONS_DARK["copy"], "Copier la réponse", header)
         self.copy_button.setIconSize(QSize(17, 17))
-        self.copy_button.setFixedSize(27, 28)
-        self.copy_button.setToolTip("Copier la réponse")
-        self.copy_button.setCursor(Qt.PointingHandCursor)
         self.copy_button.clicked.connect(self.copy_response)
         header_layout.addWidget(self.copy_button, 0, Qt.AlignVCenter)
 
-        self.close_button = QPushButton(header)
-        self.close_button.setObjectName("HeaderIconButton")
-        self.close_button.setFlat(True)
-        self.close_button.setAutoFillBackground(False)
-        self.close_button.setIcon(ICONS_DARK["close"])
-        self.close_button.setIconSize(QSize(19, 19))
-        self.close_button.setFixedSize(27, 28)
-        self.close_button.setToolTip("Fermer")
-        self.close_button.setCursor(Qt.PointingHandCursor)
-        self.close_button.setFocusPolicy(Qt.NoFocus)
+        self.close_button = AnimatedHeaderButton(ICONS_DARK["close"], "Fermer", header)
+        self.close_button.setIconSize(QSize(18, 18))
         self.close_button.clicked.connect(self.close_response_window)
         header_layout.addWidget(self.close_button, 0, Qt.AlignVCenter)
         panel_layout.addWidget(header)
-        self.separator_container = QWidget(self.panel)
-        self.separator_container.setFixedHeight(3)
-        sep_layout = QHBoxLayout(self.separator_container)
-        sep_layout.setContentsMargins(14, 0, 14, 0)
-        separator = QFrame(self.separator_container)
-        separator.setFixedHeight(1)
-        separator.setStyleSheet("background: rgba(0,0,0,35); border: none;")
-        sep_layout.addWidget(separator)
+        self.separator_container = QFrame(self.panel)
+        self.separator_container.setFixedHeight(1)
+        self.separator_container.setStyleSheet("background: rgba(0,0,0,35); border: none;")
         panel_layout.addWidget(self.separator_container)
 
         self.scroll_area = QScrollArea(self.panel)
@@ -387,20 +345,20 @@ class AssistantWindow(QWidget):
         self.label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.label.setContentsMargins(0, 0, 0, 0)
         self.label.setMinimumWidth(0)
-        self.label.setStyleSheet("""
-            QLabel {
+        self.label.setStyleSheet(f"""
+            QLabel {{
                 background: transparent;
-                color: #111111;
-                padding: 7px 15px 7px 10px;
-                font-family: 'Aptos', 'Segoe UI Variable Text', 'Segoe UI', Arial;
-                font-size: 13px;
+                color: {COLOR_TEXT_PRIMARY};
+                padding: 10px 14px 10px 14px;
+                font-family: {FONT_TEXT};
+                font-size: {SIZE_LG};
                 line-height: 1.5;
-            }
+            }}
         """)
 
         pal = self.label.palette()
-        pal.setColor(QPalette.Highlight, QColor(170, 170, 170))
-        pal.setColor(QPalette.HighlightedText, QColor(17, 17, 17))
+        pal.setColor(QPalette.Highlight, QColor(COLOR_PRIMARY_LIGHT))
+        pal.setColor(QPalette.HighlightedText, QColor(COLOR_TEXT_PRIMARY))
         self.label.setPalette(pal)
         self.scroll_area.setWidget(self.label)
         panel_layout.addWidget(self.scroll_area, 1)
@@ -604,34 +562,34 @@ class AssistantWindow(QWidget):
         menu.setObjectName("AssistantMenu")
         menu.setAttribute(Qt.WA_TranslucentBackground, False)
         menu.setAutoFillBackground(True)
-        menu.setStyleSheet("""
-            QMenu#AssistantMenu {
-                background-color: #FFFFFF;
-                color: #111111;
-                border: 1px solid rgba(255, 255, 255, 60);
-                border-radius: 8px;
+        menu.setStyleSheet(f"""
+            QMenu#AssistantMenu {{
+                background-color: {COLOR_BG_SURFACE};
+                color: {COLOR_TEXT_PRIMARY};
+                border: 1px solid {COLOR_BORDER};
+                border-radius: {RADIUS_MD};
                 padding: 8px;
-                font-family: 'Segoe UI Variable', 'Segoe UI', Arial;
-                font-size: 13px;
-            }
-            QMenu#AssistantMenu::item {
+                font-family: {FONT_TEXT};
+                font-size: {SIZE_LG};
+            }}
+            QMenu#AssistantMenu::item {{
                 background-color: transparent;
-                color: #111111;
+                color: {COLOR_TEXT_PRIMARY};
                 min-height: 22px;
                 padding: 7px 22px 7px 12px;
                 margin: 2px;
                 border: none;
-                border-radius: 6px;
-            }
-            QMenu#AssistantMenu::item:selected {
-                background-color: rgba(8, 74, 144, 150);
-                color: #FFFFFF;
-            }
-            QMenu#AssistantMenu::separator {
+                border-radius: {RADIUS_SM};
+            }}
+            QMenu#AssistantMenu::item:selected {{
+                background-color: {COLOR_PRIMARY};
+                color: {COLOR_TEXT_INVERSE};
+            }}
+            QMenu#AssistantMenu::separator {{
                 height: 1px;
-                background-color: rgba(0, 0, 0, 35);
+                background-color: {COLOR_BORDER_SUBTLE};
                 margin: 6px 10px;
-            }
+            }}
         """)
 
         for i, action in enumerate(self.config['actions']):

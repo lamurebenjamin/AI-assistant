@@ -5,6 +5,20 @@ import sys
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QPalette
 
+from src.ui.design_tokens import (
+    COLOR_BG_PAGE,
+    COLOR_BG_SUBTLE,
+    COLOR_BG_SURFACE,
+    COLOR_BORDER,
+    COLOR_BORDER_SUBTLE,
+    COLOR_PRIMARY_LIGHT,
+    COLOR_TEXT_MUTED,
+    COLOR_TEXT_PRIMARY,
+    FONT_TEXT,
+    RADIUS_SM,
+    SIZE_MD,
+)
+
 
 class AccentPolicy(ctypes.Structure):
     _fields_ = [
@@ -70,58 +84,61 @@ def apply_light_popup_theme(app) -> None:
     la palette et le QSS doivent être appliqués au niveau de QApplication.
     """
     palette = app.palette()
-    palette.setColor(QPalette.Window, QColor("#F8FAFC"))
-    palette.setColor(QPalette.WindowText, QColor("#111111"))
-    palette.setColor(QPalette.Base, QColor("#FFFFFF"))
-    palette.setColor(QPalette.AlternateBase, QColor("#F1F5F9"))
-    palette.setColor(QPalette.Text, QColor("#111111"))
-    palette.setColor(QPalette.Button, QColor("#FFFFFF"))
-    palette.setColor(QPalette.ButtonText, QColor("#111111"))
-    palette.setColor(QPalette.Highlight, QColor("#DCEBFF"))
-    palette.setColor(QPalette.HighlightedText, QColor("#111111"))
-    palette.setColor(QPalette.ToolTipBase, QColor("#FFFFFF"))
-    palette.setColor(QPalette.ToolTipText, QColor("#111111"))
-    palette.setColor(QPalette.Disabled, QPalette.Text, QColor("#8A949F"))
-    palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#8A949F"))
+    palette.setColor(QPalette.Window, QColor(COLOR_BG_PAGE))
+    palette.setColor(QPalette.WindowText, QColor(COLOR_TEXT_PRIMARY))
+    palette.setColor(QPalette.Base, QColor(COLOR_BG_SURFACE))
+    palette.setColor(QPalette.AlternateBase, QColor(COLOR_BG_SUBTLE))
+    palette.setColor(QPalette.Text, QColor(COLOR_TEXT_PRIMARY))
+    palette.setColor(QPalette.Button, QColor(COLOR_BG_SURFACE))
+    palette.setColor(QPalette.ButtonText, QColor(COLOR_TEXT_PRIMARY))
+    palette.setColor(QPalette.Highlight, QColor(COLOR_PRIMARY_LIGHT))
+    palette.setColor(QPalette.HighlightedText, QColor(COLOR_TEXT_PRIMARY))
+    palette.setColor(QPalette.ToolTipBase, QColor(COLOR_BG_SURFACE))
+    palette.setColor(QPalette.ToolTipText, QColor(COLOR_TEXT_PRIMARY))
+    palette.setColor(QPalette.Disabled, QPalette.Text, QColor(COLOR_TEXT_MUTED))
+    palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor(COLOR_TEXT_MUTED))
     app.setPalette(palette)
     app.setStyleSheet(
         (app.styleSheet() or "")
-        + """
-        QMenu {
-            background-color: #FFFFFF;
-            color: #111111;
-            border: 1px solid #CBD7E4;
+        + f"""
+        QMenu {{
+            background-color: {COLOR_BG_SURFACE};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER};
             padding: 5px;
-            font-family: 'Segoe UI Variable', 'Segoe UI', Arial;
-            font-size: 12px;
-        }
-        QMenu::item {
+            font-family: {FONT_TEXT};
+            font-size: {SIZE_MD};
+        }}
+        QMenu::item {{
             background-color: transparent;
-            color: #111111;
+            color: {COLOR_TEXT_PRIMARY};
             min-height: 20px;
             padding: 6px 28px 6px 10px;
             margin: 1px;
-            border-radius: 4px;
-        }
-        QMenu::item:selected {
-            background-color: #DCEBFF;
-            color: #111111;
-        }
-        QMenu::item:disabled {
-            color: #8A949F;
+            border-radius: {RADIUS_SM};
+        }}
+        QMenu::item:selected {{
+            background-color: {COLOR_PRIMARY_LIGHT};
+            color: {COLOR_TEXT_PRIMARY};
+        }}
+        QMenu::item:disabled {{
+            color: {COLOR_TEXT_MUTED};
             background-color: transparent;
-        }
-        QMenu::separator {
+        }}
+        QMenu::separator {{
             height: 1px;
-            background-color: #D7E0EA;
+            background-color: {COLOR_BORDER_SUBTLE};
             margin: 5px 8px;
-        }
-        QMenu::icon { padding-left: 4px; }
-        QToolTip {
+        }}
+        QMenu::icon {{ padding-left: 4px; }}
+        QToolTip {{
             background-color: #FFFFFF;
-            color: #111111;
-            border: 1px solid #CBD7E4;
-            padding: 4px 7px;
-        }
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER};
+            border-radius: 0px;
+            padding: 5px 8px;
+            font-family: {FONT_TEXT};
+            font-size: {SIZE_MD};
+        }}
     """
     )

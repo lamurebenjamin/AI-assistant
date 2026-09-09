@@ -6,7 +6,17 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QAction, QMenu, QSystemTrayIcon
 
 from src.config.schema import APP_DIR
-from src.ui.icons import create_svg_icon
+from src.ui.design_tokens import (
+    COLOR_BG_SURFACE,
+    COLOR_BORDER,
+    COLOR_BORDER_SUBTLE,
+    COLOR_PRIMARY_LIGHT,
+    COLOR_TEXT_PRIMARY,
+    FONT_TEXT,
+    RADIUS_SM,
+    SIZE_LG,
+)
+from src.ui.icons import get_logo_pixmap
 
 
 def create_tray_icon(app, assistant):
@@ -17,24 +27,7 @@ def create_tray_icon(app, assistant):
     """
     tray_icon = QSystemTrayIcon(app)
 
-    # Logo fourni avec l'application, inspiré de la pièce jointe.
-    # Le chemin reste valide même si l'application est lancée depuis un autre dossier.
-    icon_path = os.path.join(
-        APP_DIR,
-        "assistant_icon.webp"
-    )
-    icon = QIcon(icon_path)
-    if icon.isNull():
-        # Icône de secours si le fichier visuel est absent.
-        fallback_svg = (
-            '<path d="M12 1.5C11.2 7.5 7.5 11.2 1.5 12 '
-            'C7.5 12.8 11.2 16.5 12 22.5 '
-            'C12.8 16.5 16.5 12.8 22.5 12 '
-            'C16.5 11.2 12.8 7.5 12 1.5z"/>'
-        )
-        icon = create_svg_icon(fallback_svg, "#FFFFFF")
-    if icon.isNull():
-        icon = app.style().standardIcon(QStyle.SP_ComputerIcon)
+    icon = QIcon(get_logo_pixmap(32, APP_DIR))
 
     app.setWindowIcon(icon)
     tray_icon.setIcon(icon)
@@ -44,31 +37,31 @@ def create_tray_icon(app, assistant):
     tray_menu.setObjectName("TrayLightMenu")
     tray_menu.setAttribute(Qt.WA_TranslucentBackground, False)
     tray_menu.setAutoFillBackground(True)
-    tray_menu.setStyleSheet("""
-        QMenu#TrayLightMenu {
-            background-color: #FFFFFF;
-            color: #111111;
-            border: 1px solid #CBD7E4;
+    tray_menu.setStyleSheet(f"""
+        QMenu#TrayLightMenu {{
+            background-color: {COLOR_BG_SURFACE};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER};
             padding: 6px;
-            font-family: 'Segoe UI Variable', 'Segoe UI', Arial;
-            font-size: 13px;
-        }
-        QMenu#TrayLightMenu::item {
+            font-family: {FONT_TEXT};
+            font-size: {SIZE_LG};
+        }}
+        QMenu#TrayLightMenu::item {{
             background: transparent;
-            color: #111111;
+            color: {COLOR_TEXT_PRIMARY};
             padding: 7px 24px 7px 12px;
             margin: 1px;
-            border-radius: 5px;
-        }
-        QMenu#TrayLightMenu::item:selected {
-            background-color: #DCEBFF;
-            color: #111111;
-        }
-        QMenu#TrayLightMenu::separator {
+            border-radius: {RADIUS_SM};
+        }}
+        QMenu#TrayLightMenu::item:selected {{
+            background-color: {COLOR_PRIMARY_LIGHT};
+            color: {COLOR_TEXT_PRIMARY};
+        }}
+        QMenu#TrayLightMenu::separator {{
             height: 1px;
-            background-color: #D7E0EA;
+            background-color: {COLOR_BORDER_SUBTLE};
             margin: 5px 8px;
-        }
+        }}
     """)
     settings_action = QAction("Paramètres", tray_menu)
     hotkeys_enabled = bool(assistant.config.get("hotkeys_enabled", True))

@@ -5,6 +5,8 @@ from PyQt5.QtCore import QPointF, Qt, QTimer
 from PyQt5.QtGui import QColor, QPainter
 from PyQt5.QtWidgets import QWidget
 
+from src.ui.design_tokens import COLOR_SUCCESS
+
 
 class ThinkingDots(QWidget):
     """Trois petits points animés de façon continue avant le premier token."""
@@ -34,7 +36,7 @@ class ThinkingDots(QWidget):
             wave = (math.sin(self.animation_time - index * 0.85) + 1.0) / 2.0
             radius = 1.55 + 0.45 * wave
             y = center_y - 1.8 * wave
-            color = QColor("#397D58")
+            color = QColor(COLOR_SUCCESS)
             color.setAlpha(int(115 + 105 * wave))
             painter.setBrush(color)
             x = 10.0 + index * 10.0

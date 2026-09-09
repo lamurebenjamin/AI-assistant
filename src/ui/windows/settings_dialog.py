@@ -30,8 +30,23 @@ from PyQt5.QtWidgets import (
 
 from src.config.schema import APP_DIR, DEFAULT_CONFIG, LOGGER
 from src.config.manager import save_config
-from src.ui.icons import ICONS, ICONS_DARK, create_svg_icon
+from src.ui.design_tokens import (
+    COLOR_BG_PAGE,
+    COLOR_BG_SURFACE,
+    COLOR_BORDER,
+    COLOR_BORDER_SUBTLE,
+    COLOR_PRIMARY,
+    COLOR_TEXT_PRIMARY,
+    FONT_TEXT,
+    RADIUS_LG,
+    RADIUS_MD,
+    SIZE_LG,
+    SIZE_MD,
+)
+from src.ui.icons import ICONS, ICONS_DARK, get_logo_pixmap
+from src.ui.stylesheet import build_settings_qss
 from src.ui.theme import apply_rounded_corners
+from src.ui.widgets.animated_buttons import AnimatedHeaderButton
 from src.audio.recorder import AudioRecorderThread
 from src.monitoring.server_status import ServerStatusThread
 from src.monitoring.nvidia_status import NvidiaStatusThread
@@ -74,90 +89,7 @@ class SettingsDialog(QDialog):
         # l'ensemble des onglets et des boutons construit.
         self.setFixedWidth(840)
 
-        self.setStyleSheet("""
-            QDialog { background-color: #F8FAFC; }
-            QTabWidget::pane {
-                background: #F8FAFC;
-                border: 1px solid #CBD7E4;
-                border-top: none;
-                border-radius: 0 0 8px 8px;
-                top: -1px;
-            }
-            QTabBar::tab {
-                background: #E9EEF4;
-                color: #4B5563;
-                border: 1px solid #CBD7E4;
-                border-bottom: none;
-                padding: 9px 18px;
-                margin-right: 3px;
-                min-width: 110px;
-                font-weight: 600;
-            }
-            QTabBar::tab:selected {
-                background: #F8FAFC;
-                color: #171717;
-            }
-            QTabBar::tab:hover:!selected { background: #DDE6F0; }
-            QFrame#AcrylicPanel {
-                background-color: #F8FAFC;
-                border: 1px solid #CBD7E4;
-                border-radius: 16px;
-            }
-            QFrame#Header {
-                background-color: transparent;
-                border: none;
-            }
-            QLabel#TitleLabel {
-                background: transparent; color: #171717; border: none; padding: 0;
-                font-family: 'Aptos Display', 'Segoe UI Variable Display', 'Segoe UI', Arial; font-size: 13px; font-weight: 700;
-            }
-            QPushButton#CloseButton {
-                background-color: transparent; border: none; border-radius: 14px;
-                padding: 0; margin: 0; text-align: center;
-            }
-            QPushButton#CloseButton:hover, QPushButton#CloseButton:pressed,
-            QPushButton#CloseButton:focus { background: transparent; border: none; outline: none; }
-            QPushButton#ToolButton:hover { background-color: rgba(0, 0, 0, 12); }
-            QPushButton#ToolButton {
-                background-color: transparent; border: none; border-radius: 14px; padding: 3px;
-            }
-            QPushButton#ToolButton:disabled { background-color: transparent; }
-            QLabel { color: #111111; background: transparent; }
-            QLineEdit, QTextEdit, QComboBox {
-                background-color: rgba(255, 255, 255, 245); border: 1px solid rgba(8, 74, 144, 70);
-                border-radius: 4px; padding: 6px; color: #111111;
-            }
-            QListWidget {
-                background-color: rgba(255, 255, 255, 245); border: 1px solid rgba(8, 74, 144, 70);
-                border-radius: 6px; padding: 4px; outline: none; color: #111111;
-            }
-            QListWidget::item { padding: 6px; border-radius: 4px; }
-            QListWidget::item:hover { background-color: rgba(0, 0, 0, 20); }
-            QListWidget::item:selected { background-color: #2563B8; color: #FFFFFF; }
-            QPushButton {
-                background-color: rgba(255, 255, 255, 100); border: 1px solid rgba(0, 0, 0, 50);
-                border-radius: 6px; padding: 6px 12px; color: #111111;
-            }
-            QPushButton:hover { background-color: rgba(0, 0, 0, 10); }
-            QPushButton:pressed { background-color: rgba(0, 0, 0, 20); }
-            QPushButton#CancelBtn {
-                background-color: #FFFFFF; color: #303640; border: 1px solid #C5D0DC;
-                border-radius: 8px; padding: 7px 16px; font-weight: 600;
-            }
-            QPushButton#CancelBtn:hover { background-color: #F1F5F9; border-color: #AAB8C7; }
-            QPushButton#CancelBtn:pressed { background-color: #E6EDF4; }
-            QPushButton#SaveBtn {
-                background-color: #2563B8; color: #FFFFFF; border: 1px solid #2563B8;
-                border-radius: 8px; padding: 7px 18px; font-weight: 600;
-            }
-            QPushButton#SaveBtn:hover { background-color: #1D4F96; border-color: #1D4F96; }
-            QPushButton#SaveBtn:pressed { background-color: #173F78; border-color: #173F78; }
-            QScrollArea, QScrollArea QWidget, QScrollArea QViewport { background: transparent; border: none; }
-            QScrollBar:vertical { background: rgba(0, 0, 0, 14); width: 10px; margin: 4px 3px 8px 0; border-radius: 5px; }
-            QScrollBar::handle:vertical { background: rgba(30, 30, 30, 85); min-height: 26px; border-radius: 4px; }
-            QScrollBar::handle:vertical:hover { background: rgba(30, 30, 30, 135); }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical, QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { height: 0; background: transparent; }
-        """)
+        self.setStyleSheet(build_settings_qss())
 
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -183,20 +115,7 @@ class SettingsDialog(QDialog):
         self.header_icon_label = QLabel(header)
         self.header_icon_label.setFixedSize(18, 18)
         self.header_icon_label.setAlignment(Qt.AlignCenter)
-        header_icon_path = os.path.join(
-            APP_DIR,
-            "assistant_icon.webp"
-        )
-        header_icon = QIcon(header_icon_path)
-        if header_icon.isNull():
-            fallback_svg = (
-                '<path d="M12 1.5C11.2 7.5 7.5 11.2 1.5 12 '
-                'C7.5 12.8 11.2 16.5 12 22.5 '
-                'C12.8 16.5 16.5 12.8 22.5 12 '
-                'C16.5 11.2 12.8 7.5 12 1.5z"/>'
-            )
-            header_icon = create_svg_icon(fallback_svg, "#171717")
-        self.header_icon_label.setPixmap(header_icon.pixmap(16, 16))
+        self.header_icon_label.setPixmap(get_logo_pixmap(16, APP_DIR))
         header_layout.addWidget(self.header_icon_label, 0, Qt.AlignVCenter)
 
         title_label = QLabel("Paramètres", header)
@@ -205,29 +124,15 @@ class SettingsDialog(QDialog):
         title_label.setTextFormat(Qt.PlainText)
         header_layout.addWidget(title_label, 1)
 
-        close_btn = QPushButton(header)
-        close_btn.setObjectName("CloseButton")
-        close_btn.setFlat(True)
-        close_btn.setAutoFillBackground(False)
-        close_btn.setIcon(ICONS_DARK["close"])
-        close_btn.setIconSize(QSize(19, 19))
-        close_btn.setFixedSize(27, 28)
-        close_btn.setToolTip("Fermer")
-        close_btn.setCursor(Qt.PointingHandCursor)
-        close_btn.setFocusPolicy(Qt.NoFocus)
+        close_btn = AnimatedHeaderButton(ICONS_DARK["close"], "Fermer", header)
         close_btn.clicked.connect(self.reject)
         header_layout.addWidget(close_btn, 0, Qt.AlignVCenter)
         panel_layout.addWidget(header)
 
-        separator_container = QWidget(self.panel)
-        separator_container.setFixedHeight(3)
-        separator_layout = QHBoxLayout(separator_container)
-        separator_layout.setContentsMargins(14, 0, 14, 0)
-        separator = QFrame(separator_container)
+        separator = QFrame(self.panel)
         separator.setFixedHeight(1)
         separator.setStyleSheet("background: rgba(0,0,0,35); border: none;")
-        separator_layout.addWidget(separator)
-        panel_layout.addWidget(separator_container)
+        panel_layout.addWidget(separator)
 
         content_widget = QWidget(self.panel)
         content_widget.setObjectName("SettingsContent")
@@ -321,7 +226,7 @@ class SettingsDialog(QDialog):
         llm_layout.addLayout(model_line_layout)
 
         server_box = QFrame()
-        server_box.setStyleSheet("QFrame { background:#EEF3F8; border:1px solid #CBD7E4; border-radius:6px; }")
+        server_box.setStyleSheet(f"QFrame {{ background: {COLOR_BG_SURFACE}; border: 1px solid {COLOR_BORDER_SUBTLE}; border-radius: {RADIUS_LG}; }}")
         server_form = QFormLayout(server_box)
         server_form.setContentsMargins(12, 10, 12, 10)
         server_form.setSpacing(8)
@@ -364,7 +269,7 @@ class SettingsDialog(QDialog):
         llm_layout.addLayout(gpu_line_layout)
 
         voice_box = QFrame()
-        voice_box.setStyleSheet("QFrame { background:#EEF3F8; border:1px solid #CBD7E4; border-radius:6px; }")
+        voice_box.setStyleSheet(f"QFrame {{ background: {COLOR_BG_SURFACE}; border: 1px solid {COLOR_BORDER_SUBTLE}; border-radius: {RADIUS_LG}; }}")
         voice_form = QFormLayout(voice_box)
         voice_form.setContentsMargins(12, 10, 12, 10)
 
@@ -423,8 +328,8 @@ class SettingsDialog(QDialog):
         btn_layout.setSpacing(8)
         btn_add = QPushButton(" Ajouter"); btn_add.setIcon(ICONS_DARK["add"]); btn_add.clicked.connect(self.add_action)
         btn_del = QPushButton(" Supprimer"); btn_del.setIcon(ICONS_DARK["delete"]); btn_del.clicked.connect(self.del_action)
-        btn_up = QPushButton(); btn_up.setIcon(ICONS_DARK["up"]); btn_up.setToolTip("Monter"); btn_up.clicked.connect(lambda: self.move_action(-1))
-        btn_down = QPushButton(); btn_down.setIcon(ICONS_DARK["down"]); btn_down.setToolTip("Descendre"); btn_down.clicked.connect(lambda: self.move_action(1))
+        btn_up = QPushButton(); btn_up.setObjectName("ToolButton"); btn_up.setIcon(ICONS_DARK["up"]); btn_up.setToolTip("Monter"); btn_up.clicked.connect(lambda: self.move_action(-1))
+        btn_down = QPushButton(); btn_down.setObjectName("ToolButton"); btn_down.setIcon(ICONS_DARK["down"]); btn_down.setToolTip("Descendre"); btn_down.clicked.connect(lambda: self.move_action(1))
 
         btn_layout.addWidget(btn_add)
         btn_layout.addWidget(btn_del)

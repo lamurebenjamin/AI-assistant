@@ -1,9 +1,8 @@
 """Fenêtre flottante affichée lors de la captation vocale."""
 
-import os
 import time
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QCursor, QIcon
+from PyQt5.QtGui import QCursor
 from PyQt5.QtWidgets import (
     QApplication,
     QFrame,
@@ -14,7 +13,16 @@ from PyQt5.QtWidgets import (
 )
 
 from src.config.schema import APP_DIR, LOGGER
-from src.ui.icons import create_svg_icon
+from src.ui.design_tokens import (
+    COLOR_PRESS_DARK,
+    COLOR_TEXT_MUTED,
+    COLOR_TEXT_PRIMARY,
+    FONT_DISPLAY,
+    FONT_TEXT,
+    SIZE_LG,
+)
+from src.ui.icons import get_logo_pixmap
+from src.ui.stylesheet import build_acrylic_window_qss
 from src.ui.theme import apply_acrylic_blur, apply_rounded_corners
 from src.ui.widgets.audio_bars import LiveAudioIndicator
 
@@ -44,13 +52,17 @@ class RecordingIndicator(QWidget):
         self.panel = QFrame(self)
         self.panel.setObjectName("AcrylicPanel")
         self.panel.setStyleSheet(
+            build_acrylic_window_qss()
+            + f"""
+            QLabel#VoiceText, QLabel#VoiceClock {{
+                background: transparent;
+                color: {COLOR_TEXT_PRIMARY};
+                border: none;
+                font-family: {FONT_TEXT};
+                font-size: {SIZE_LG};
+            }}
+            QLabel#VoiceClock {{ color: {COLOR_TEXT_MUTED}; }}
             """
-            QFrame#AcrylicPanel { background-color: rgba(255,255,255,34); border: 1px solid rgba(255,255,255,60); border-radius: 16px; }
-            QFrame#Header { background: transparent; border: none; }
-            QLabel#TitleLabel { background: transparent; color: #171717; border: none; font-family: 'Aptos Display','Segoe UI Variable Display','Segoe UI',Arial; font-size: 13px; font-weight: 700; }
-            QLabel#VoiceText, QLabel#VoiceClock { background: transparent; color: #111111; border: none; font-family: 'Aptos','Segoe UI Variable Text','Segoe UI',Arial; font-size: 13px; }
-            QLabel#VoiceClock { color: #4A5562; }
-        """
         )
         panel_layout = QVBoxLayout(self.panel)
         panel_layout.setContentsMargins(0, 0, 0, 0)
@@ -65,14 +77,7 @@ class RecordingIndicator(QWidget):
         header_layout.setSpacing(7)
         icon_label = QLabel(header)
         icon_label.setFixedSize(18, 18)
-        icon_path = os.path.join(APP_DIR, "assistant_icon.webp")
-        icon = QIcon(icon_path)
-        if icon.isNull():
-            icon = create_svg_icon(
-                '<path d="M12 1.5C11.2 7.5 7.5 11.2 1.5 12 C7.5 12.8 11.2 16.5 12 22.5 C12.8 16.5 16.5 12.8 22.5 12 C16.5 11.2 12.8 7.5 12 1.5z"/>',
-                "#FFFFFF",
-            )
-        icon_label.setPixmap(icon.pixmap(16, 16))
+        icon_label.setPixmap(get_logo_pixmap(16, APP_DIR))
         self.title = QLabel("Assistant", header)
         self.title.setObjectName("TitleLabel")
         self.title.setAlignment(Qt.AlignCenter)
@@ -90,7 +95,7 @@ class RecordingIndicator(QWidget):
         separator_layout.setContentsMargins(14, 0, 14, 0)
         separator = QFrame(separator_box)
         separator.setFixedHeight(1)
-        separator.setStyleSheet("background:rgba(0,0,0,35);border:none;")
+        separator.setStyleSheet(f"background:{COLOR_PRESS_DARK};border:none;")
         separator_layout.addWidget(separator)
         panel_layout.addWidget(separator_box)
 

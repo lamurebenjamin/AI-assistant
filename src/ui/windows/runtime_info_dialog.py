@@ -4,6 +4,16 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QPalette
 from PyQt5.QtWidgets import QDialog, QLabel, QVBoxLayout
 
+from src.ui.design_tokens import (
+    COLOR_BG_PAGE,
+    COLOR_BG_SURFACE,
+    COLOR_BORDER,
+    COLOR_TEXT_PRIMARY,
+    FONT_TEXT,
+    RADIUS_MD,
+    SIZE_LG,
+)
+
 
 class RuntimeInfoDialog(QDialog):
     """Fenêtre compacte affichant les ressources de l'application."""
@@ -19,16 +29,17 @@ class RuntimeInfoDialog(QDialog):
         self.setFixedWidth(self.WINDOW_WIDTH)
         self.setAutoFillBackground(True)
         light_palette = self.palette()
-        light_palette.setColor(QPalette.Window, QColor("#F8FAFC"))
-        light_palette.setColor(QPalette.WindowText, QColor("#17202A"))
-        light_palette.setColor(QPalette.Base, QColor("#FFFFFF"))
-        light_palette.setColor(QPalette.Text, QColor("#17202A"))
+        light_palette.setColor(QPalette.Window, QColor(COLOR_BG_PAGE))
+        light_palette.setColor(QPalette.WindowText, QColor(COLOR_TEXT_PRIMARY))
+        light_palette.setColor(QPalette.Base, QColor(COLOR_BG_SURFACE))
+        light_palette.setColor(QPalette.Text, QColor(COLOR_TEXT_PRIMARY))
         self.setPalette(light_palette)
         self.setStyleSheet(
-            "QDialog { background:#F8FAFC; }"
-            "QLabel#RuntimeValues { color:#17202A; font-size:13px; "
-            "background:#FFFFFF; border:1px solid #CBD7E4; border-radius:7px; "
-            "padding:14px; }"
+            f"QDialog {{ background:{COLOR_BG_PAGE}; }}"
+            f"QLabel#RuntimeValues {{ color:{COLOR_TEXT_PRIMARY}; "
+            f"font-family:{FONT_TEXT}; font-size:{SIZE_LG}; "
+            f"background:{COLOR_BG_SURFACE}; border:1px solid {COLOR_BORDER}; border-radius:{RADIUS_MD}; "
+            f"padding:14px; }}"
         )
         self.runtime_layout = QVBoxLayout(self)
         self.runtime_layout.setContentsMargins(18, 16, 18, 16)

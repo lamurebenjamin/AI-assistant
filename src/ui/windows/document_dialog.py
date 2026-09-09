@@ -1,6 +1,7 @@
 """Fenêtre d'analyse et de dialogue documentaire (PDF, images, texte)."""
 
 import base64
+import html
 import json
 import os
 import re
@@ -47,9 +48,45 @@ except ImportError:
     fitz = None
 
 from src.config.schema import APP_DIR, LOGGER
-from src.ui.icons import ICONS_DARK, create_svg_icon
+from src.ui.design_tokens import (
+    COLOR_BG_ACRYLIC,
+    COLOR_BG_PAGE,
+    COLOR_BG_SURFACE,
+    COLOR_BORDER,
+    COLOR_BORDER_ACRYLIC,
+    COLOR_BORDER_INPUT,
+    COLOR_BORDER_SUBTLE,
+    COLOR_DANGER,
+    COLOR_GRAY_200,
+    COLOR_GRAY_500,
+    COLOR_GRAY_700,
+    COLOR_HOVER_DARK,
+    COLOR_PRESS_DARK,
+    COLOR_PRIMARY,
+    COLOR_PRIMARY_HOVER,
+    COLOR_PRIMARY_LIGHT,
+    COLOR_SCROLLBAR_HOVER,
+    COLOR_SCROLLBAR_THUMB,
+    COLOR_SCROLLBAR_TRACK,
+    COLOR_TEXT_INVERSE,
+    COLOR_TEXT_MUTED,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY,
+    FONT_DISPLAY,
+    FONT_TEXT,
+    RADIUS_MD,
+    RADIUS_SM,
+    RADIUS_LG,
+    RADIUS_XL,
+    RADIUS_2XL,
+    SIZE_XS,
+    SIZE_SM,
+    SIZE_MD,
+    SIZE_LG,
+)
+from src.ui.icons import ICONS_DARK, create_svg_icon, get_logo_pixmap
 from src.ui.theme import apply_acrylic_blur, apply_rounded_corners
-from src.ui.widgets.animated_buttons import AnimatedComposerButton
+from src.ui.widgets.animated_buttons import AnimatedComposerButton, AnimatedHeaderButton
 from src.ui.widgets.attachment_widget import AttachmentPreviewWidget
 from src.ui.widgets.audio_bars import ScrollingAudioBars
 from src.ui.widgets.chat_bubble import ChatBubble
@@ -104,58 +141,58 @@ class DocumentDialog(QDialog):
         self._build_ui()
 
     def _build_ui(self):
-        self.setStyleSheet("""
-            QDialog { background: transparent; }
-            QToolTip {
-                background-color: #F8FAFC;
-                color: #111111;
-                border: 1px solid #CBD7E4;
-                border-radius: 5px;
-                padding: 4px 7px;
-                font-family: 'Aptos','Segoe UI Variable Text','Segoe UI',Arial;
-                font-size: 12px;
-            }
-            QFrame#DocPanel {
-                background-color: rgba(255,255,255,34);
-                border: 1px solid rgba(255,255,255,60);
-                border-radius: 16px;
-            }
-            QFrame#DocHeader { background: transparent; border: none; }
-            QLabel { background: transparent; color:#111111; border:none;
-                     font-family:'Aptos','Segoe UI Variable Text','Segoe UI',Arial; font-size:12px; }
-            QLabel#DocTitle { font-family:'Aptos Display','Segoe UI Variable Display','Segoe UI',Arial;
-                              font-size:13px; font-weight:700; }
-            QFrame#Composer {
-                background: rgba(255,255,255,135);
-                border: 1px solid rgba(0,0,0,35);
-                border-radius: 13px;
-            }
-            QFrame#DocumentCard {
+        self.setStyleSheet(f"""
+            QDialog {{ background: transparent; }}
+            QToolTip {{
+                background-color: #FFFFFF;
+                color: {COLOR_TEXT_PRIMARY};
+                border: 1px solid {COLOR_BORDER};
+                border-radius: 0px;
+                padding: 5px 8px;
+                font-family: {FONT_TEXT};
+                font-size: {SIZE_MD};
+            }}
+            QFrame#DocPanel {{
+                background-color: {COLOR_BG_ACRYLIC};
+                border: 1px solid {COLOR_BORDER_ACRYLIC};
+                border-radius: {RADIUS_2XL};
+            }}
+            QFrame#DocHeader {{ background: transparent; border: none; }}
+            QLabel {{ background: transparent; color: {COLOR_TEXT_PRIMARY}; border: none;
+                     font-family: {FONT_TEXT}; font-size: {SIZE_MD}; }}
+            QLabel#DocTitle {{ font-family: {FONT_DISPLAY};
+                              font-size: {SIZE_LG}; font-weight: 700; }}
+            QFrame#Composer {{
+                background: rgba(255, 255, 255, 135);
+                border: 1px solid rgba(0, 0, 0, 35);
+                border-radius: {RADIUS_XL};
+            }}
+            QFrame#DocumentCard {{
                 /* Les pièces jointes appartiennent visuellement au même bloc
                    que le champ « Message assistant IA ». */
                 background: transparent;
                 border: none;
                 border-radius: 0;
-            }
-            QLabel#Preview { background:rgba(255,255,255,100); border:1px solid rgba(0,0,0,30);
-                             border-radius:7px; padding:3px; }
-            QTextEdit { background:transparent; border:none; padding:6px 1px 4px 1px;
-                        color:#111111; font-size:12px; }
-            QTextBrowser#Response { background:transparent; border:none; padding:0;
-                                    font-size:12px; }
-            QPushButton#HeaderIconButton, QPushButton#ActionIconButton {
-                background:transparent; border:none; border-radius:14px; padding:0; margin:0;
-            }
+            }}
+            QLabel#Preview {{ background: rgba(255, 255, 255, 100); border: 1px solid rgba(0, 0, 0, 30);
+                             border-radius: {RADIUS_MD}; padding: 3px; }}
+            QTextEdit {{ background: transparent; border: none; padding: 6px 1px 4px 1px;
+                        color: {COLOR_TEXT_PRIMARY}; font-family: {FONT_TEXT}; font-size: {SIZE_MD}; }}
+            QTextBrowser#Response {{ background: transparent; border: none; padding: 0;
+                                    font-family: {FONT_TEXT}; font-size: {SIZE_MD}; }}
+            QPushButton#HeaderIconButton, QPushButton#ActionIconButton {{
+                background: transparent; border: none; border-radius: {RADIUS_XL}; padding: 0; margin: 0;
+            }}
             QPushButton#HeaderIconButton:hover, QPushButton#ActionIconButton:hover,
-            QPushButton#HeaderIconButton:pressed, QPushButton#ActionIconButton:pressed {
-                background:rgba(0,0,0,18); border:none;
-            }
-            QPushButton#MicRecording { background:rgba(198,40,40,35); border:none; border-radius:14px; }
-            QScrollBar:vertical { background:rgba(0,0,0,12); width:6px; margin:0; border-radius:3px; }
-            QScrollBar::handle:vertical { background:rgba(30,30,30,85); min-height:26px; border-radius:3px; }
-            QScrollBar::handle:vertical:hover { background:rgba(30,30,30,135); }
+            QPushButton#HeaderIconButton:pressed, QPushButton#ActionIconButton:pressed {{
+                background: {COLOR_HOVER_DARK}; border: none;
+            }}
+            QPushButton#MicRecording {{ background: rgba(198, 40, 40, 35); border: none; border-radius: {RADIUS_XL}; }}
+            QScrollBar:vertical {{ background: {COLOR_SCROLLBAR_TRACK}; width: 6px; margin: 0; border-radius: 3px; }}
+            QScrollBar::handle:vertical {{ background: {COLOR_SCROLLBAR_THUMB}; min-height: 26px; border-radius: 3px; }}
+            QScrollBar::handle:vertical:hover {{ background: {COLOR_SCROLLBAR_HOVER}; }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { height:0; background:transparent; border:none; }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ height: 0; background: transparent; border: none; }}
         """)
         outer = QVBoxLayout(self); outer.setContentsMargins(1,1,1,1); outer.setSpacing(0)
         self.panel = QFrame(); self.panel.setObjectName("DocPanel"); outer.addWidget(self.panel)
@@ -165,15 +202,11 @@ class DocumentDialog(QDialog):
         header.mousePressEvent=self._header_press; header.mouseMoveEvent=self._header_move; header.mouseReleaseEvent=self._header_release
         header_layout=QHBoxLayout(header); header_layout.setContentsMargins(9,1,3,0); header_layout.setSpacing(3)
         icon=QLabel(); icon.setFixedSize(18,18); icon.setAlignment(Qt.AlignCenter)
-        icon_path=os.path.join(APP_DIR,"assistant_icon.webp")
-        icon_pix=QIcon(icon_path).pixmap(16,16)
-        if icon_pix.isNull():
-            icon_pix=create_svg_icon('<path d="M12 1.5C11.2 7.5 7.5 11.2 1.5 12 C7.5 12.8 11.2 16.5 12 22.5 C12.8 16.5 16.5 12.8 22.5 12 C16.5 11.2 12.8 7.5 12 1.5z"/>','#1575D1',1.5).pixmap(16,16)
-        icon.setPixmap(icon_pix)
+        icon.setPixmap(get_logo_pixmap(16, APP_DIR))
         title=QLabel("Assistant IA"); title.setObjectName("DocTitle")
         header_layout.addWidget(icon); header_layout.addWidget(title,1)
-        close=QPushButton(); close.setObjectName("HeaderIconButton"); close.setIcon(ICONS_DARK["close"]); close.setIconSize(QSize(19,19)); close.setFixedSize(28,28); close.setToolTip("Fermer"); close.setCursor(Qt.PointingHandCursor); close.setFocusPolicy(Qt.NoFocus); close.clicked.connect(self.reject)
-        close.setStyleSheet("QPushButton{background:transparent;border:none;border-radius:14px;outline:none;} QPushButton:hover,QPushButton:pressed,QPushButton:focus{background:rgba(0,0,0,18);border:none;border-radius:14px;outline:none;}")
+        close = AnimatedHeaderButton(ICONS_DARK["close"], "Fermer", header)
+        close.clicked.connect(self.reject)
         header_layout.addWidget(close); root.addWidget(header)
 
         self.header_separator=QFrame(); self.header_separator.setFixedHeight(1); self.header_separator.setStyleSheet("background:rgba(0,0,0,35);border:none;")
@@ -247,7 +280,7 @@ class DocumentDialog(QDialog):
         content.addWidget(self.response,1)
 
         self.status=QLabel("", self.content_widget)
-        self.status.setStyleSheet("color:#245A91; font-size:11px; font-style:italic; padding:2px 4px;")
+        self.status.setStyleSheet(f"color:{COLOR_PRIMARY}; font-family:{FONT_TEXT}; font-size:{SIZE_SM}; font-style:italic; padding:2px 4px;")
         self.status.setTextFormat(Qt.PlainText)
         self.status.hide()
         content.addWidget(self.status)
@@ -260,13 +293,13 @@ class DocumentDialog(QDialog):
         self.question=MessageTextEdit(); self.question.setPlaceholderText("Message assistant IA"); self.question.setFixedHeight(30); self.question.setContentsMargins(0,0,0,0); self.question.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff); self.question.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.question.document().setDocumentMargin(0)
         self.question.setViewportMargins(0,0,0,0)
-        self.question.setStyleSheet("QTextEdit{background:transparent;border:none;padding:8px 1px 0 1px;color:#111111;font-size:12px;}")
+        self.question.setStyleSheet(f"QTextEdit{{background:transparent;border:none;padding:8px 1px 0 1px;color:{COLOR_TEXT_PRIMARY};font-family:{FONT_TEXT};font-size:{SIZE_MD};}}")
         self.question.verticalScrollBar().setValue(0)
         self.question.setAcceptDrops(False)
         self.question.viewport().setAcceptDrops(False)
         self.audio_bars=ScrollingAudioBars(self.composer)
-        self.mic_icon=create_svg_icon('<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8"/>','#111111',1.7)
-        self.recording_icon=create_svg_icon('<circle cx="12" cy="12" r="6" fill="#D13438" stroke="none"/>','#D13438',1.0)
+        self.mic_icon=create_svg_icon('<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8"/>',COLOR_TEXT_PRIMARY,1.7)
+        self.recording_icon=create_svg_icon('<circle cx="12" cy="12" r="6" fill="#D13438" stroke="none"/>',COLOR_DANGER,1.0)
         self.mic=AnimatedComposerButton("mic"); self.mic.setToolTip("Dicter"); self.mic.clicked.connect(self._toggle_microphone)
         # Le bouton d'envoi utilise le même composant, la même taille, la même
         # couleur et la même épaisseur de trait que le microphone.
@@ -286,7 +319,7 @@ class DocumentDialog(QDialog):
         self.drop_feedback=QLabel("Déposer pour ajouter le document",self.composer)
         self.drop_feedback.setAlignment(Qt.AlignCenter)
         self.drop_feedback.setAttribute(Qt.WA_TransparentForMouseEvents,True)
-        self.drop_feedback.setStyleSheet("QLabel{background:rgba(224,240,255,238);color:#0A5FAE;border:2px solid #1683E6;border-radius:12px;font-size:12px;font-weight:700;}")
+        self.drop_feedback.setStyleSheet(f"QLabel{{background:{COLOR_PRIMARY_LIGHT};color:{COLOR_PRIMARY};border:2px solid {COLOR_PRIMARY};border-radius:{RADIUS_LG};font-family:{FONT_TEXT};font-size:{SIZE_MD};font-weight:700;}}")
         self.drop_feedback.hide()
         content.addWidget(self.composer)
         root.addWidget(self.content_widget,1)
@@ -346,9 +379,9 @@ class DocumentDialog(QDialog):
         dialog.setWindowTitle(source_title)
         dialog.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
         dialog.setStyleSheet(
-            "QDialog{background:#F8FAFC;}"
-            "QScrollArea{background:#F8FAFC;border:none;}"
-            "QLabel{background:#FFFFFF;border:none;}"
+            f"QDialog{{background:{COLOR_BG_PAGE};}}"
+            f"QScrollArea{{background:{COLOR_BG_PAGE};border:none;}}"
+            f"QLabel{{background:{COLOR_BG_SURFACE};border:none;}}"
         )
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -898,16 +931,16 @@ class DocumentDialog(QDialog):
                 name_label = QLabel(displayed_name, holder)
                 name_label.setGeometry(4, pdf_title_y, cell_w - 8, pdf_title_h)
                 name_label.setAlignment(Qt.AlignCenter); name_label.setToolTip(pdf_name)
-                name_label.setStyleSheet("QLabel{background:transparent;border:none;color:#354454;font-size:10px;font-weight:600;padding:0;margin:0;}")
+                name_label.setStyleSheet(f"QLabel{{background:transparent;border:none;color:{COLOR_TEXT_SECONDARY};font-family:{FONT_TEXT};font-size:{SIZE_XS};font-weight:600;padding:0;margin:0;}}")
 
                 pages = QWidget(holder); pages.setGeometry(0, page_row_y, cell_w, page_row_h)
                 row = QHBoxLayout(pages); row.setContentsMargins(15, 0, 15, 1); row.setSpacing(0)
                 first_edit, last_edit = QLineEdit(str(first)), QLineEdit(str(last))
                 for edit in (first_edit, last_edit):
                     edit.setAlignment(Qt.AlignCenter); edit.setFixedSize(24, 19)
-                    edit.setStyleSheet("QLineEdit{background:transparent;border:1px solid transparent;border-radius:4px;padding:0;margin:0;font-size:10px;}QLineEdit:hover{background:rgba(255,255,255,175);border:1px solid rgba(0,0,0,45);}QLineEdit:focus{background:#FFFFFF;border:1px solid rgba(0,0,0,70);}")
+                    edit.setStyleSheet(f"QLineEdit{{background:transparent;border:1px solid transparent;border-radius:{RADIUS_SM};padding:0;margin:0;font-family:{FONT_TEXT};font-size:{SIZE_XS};}}QLineEdit:hover{{background:rgba(255,255,255,175);border:1px solid rgba(0,0,0,45);}}QLineEdit:focus{{background:#FFFFFF;border:1px solid rgba(0,0,0,70);}}")
                 dash = QLabel("-"); dash.setAlignment(Qt.AlignCenter); dash.setFixedSize(10, 19)
-                dash.setStyleSheet("QLabel{background:transparent;border:none;padding:0;margin:0;font-size:10px;}")
+                dash.setStyleSheet(f"QLabel{{background:transparent;border:none;padding:0;margin:0;font-family:{FONT_TEXT};font-size:{SIZE_XS};}}")
                 row.addStretch(1); row.addWidget(first_edit); row.addWidget(dash); row.addWidget(last_edit); row.addStretch(1)
                 def save_range(_path=path, _first=first_edit, _last=last_edit):
                     total = self._page_count(_path)
@@ -928,7 +961,7 @@ class DocumentDialog(QDialog):
                 label = QLabel(holder); label.setPixmap(rounded); label.setGeometry(x, y, shown.width(), shown.height())
             close = QPushButton("×", holder); close.setFixedSize(20, 20); close.move(cell_w - 22, 2)
             close.setCursor(Qt.PointingHandCursor)
-            close.setStyleSheet("QPushButton{background:#747B84;color:white;border:1px solid #F3F4F6;border-radius:10px;padding:0;font-size:15px;font-weight:600;}QPushButton:hover{background:#5E6670;}")
+            close.setStyleSheet(f"QPushButton{{background:{COLOR_GRAY_500};color:white;border:1px solid {COLOR_BORDER};border-radius:10px;padding:0;font-size:15px;font-weight:600;}}QPushButton:hover{{background:{COLOR_GRAY_700};}}")
             close.clicked.connect(lambda _=False, p=path: self._remove_path(p)); holder.set_close_button(close)
             self.image_strip_layout.addWidget(holder)
 

@@ -13,12 +13,14 @@ from PyQt5.QtCore import (
 from PyQt5.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import QPushButton
 
+from src.ui.design_tokens import COLOR_TEXT_PRIMARY
+
 
 class AnimatedComposerButton(QPushButton):
     """Bouton carré avec cercle de survol et icône centrés exactement."""
 
     # Même couleur et même épaisseur de trait que l'icône de fermeture "x".
-    ICON_COLOR = QColor("#111111")
+    ICON_COLOR = QColor(COLOR_TEXT_PRIMARY)
     ICON_STROKE_WIDTH = 1.2
     BUTTON_SIZE = QSize(28, 28)
     HOVER_DIAMETER = 26.0
@@ -146,3 +148,87 @@ class AnimatedComposerButton(QPushButton):
             painter.restore()
 
         painter.end()
+
+
+class AnimatedHeaderButton(QPushButton):
+    """Bouton d'en-tête circulaire moderne avec animation fluide de survol."""
+
+    BUTTON_SIZE = QSize(28, 28)
+    HOVER_DIAMETER = 26.0
+
+    def __init__(self, icon: QIcon = None, tooltip: str = "", parent=None):
+        super().__init__(parent)
+        self._progress = 0.0
+        self._animation = QPropertyAnimation(self, b"animationProgress", self)
+        self._animation.setDuration(160)
+        self._animation.setEasingCurve(QEasingCurve.OutCubic)
+        self.setFixedSize(self.BUTTON_SIZE)
+        self.setMouseTracking(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.NoFocus)
+        self._icon = icon if icon is not None else QIcon()
+        if tooltip:
+            self.setToolTip(tooltip)
+        self.setStyleSheet("background: transparent; border: none; padding: 0; margin: 0;")
+
+    def setIcon(self, icon: QIcon) -> None:
+        self._icon = icon
+        self.update()
+
+    def icon(self) -> QIcon:
+        return self._icon
+
+    def get_animation_progress(self) -> float:
+        return self._progress
+
+    def set_animation_progress(self, value: float) -> None:
+        self._progress = max(0.0, min(1.0, float(value)))
+        self.update()
+
+    animationProgress = pyqtProperty(
+        float, fget=get_animation_progress, fset=set_animation_progress
+    )
+
+    def enterEvent(self, event) -> None:
+        self._animation.stop()
+        self._animation.setStartValue(self._progress)
+        self._animation.setEndValue(1.0)
+        self._animation.start()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._animation.stop()
+        self._animation.setStartValue(self._progress)
+        self._animation.setEndValue(0.0)
+        self._animation.start()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        center = QPointF(self.width() / 2.0, self.height() / 2.0)
+
+        # Rond de survol animé avec opacité progressive
+        if self._progress > 0.001 or self.isDown():
+            d = self.HOVER_DIAMETER
+            circle = QRectF(center.x() - d / 2.0, center.y() - d / 2.0, d, d)
+            alpha = 35 if self.isDown() else int(22 * self._progress)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(0, 0, 0, alpha))
+            painter.drawEllipse(circle)
+
+        # Dessin de l'icône centrée
+        if not self._icon.isNull():
+            icon_sz = self.iconSize()
+            if icon_sz.isEmpty():
+                icon_sz = QSize(18, 18)
+            rect = QRectF(
+                center.x() - icon_sz.width() / 2.0,
+                center.y() - icon_sz.height() / 2.0,
+                icon_sz.width(),
+                icon_sz.height(),
+            )
+            self._icon.paint(painter, rect.toRect(), Qt.AlignCenter)
+
+        painter.end()
+

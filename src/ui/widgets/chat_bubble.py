@@ -4,6 +4,18 @@ from PyQt5.QtCore import QRectF, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPixmap
 from PyQt5.QtWidgets import QFrame, QTextBrowser, QVBoxLayout
 
+from src.ui.design_tokens import (
+    COLOR_PRIMARY_BORDER,
+    COLOR_PRIMARY_LIGHT,
+    COLOR_SUCCESS_BORDER,
+    COLOR_SUCCESS_LIGHT,
+    COLOR_SUCCESS_TEXT,
+    COLOR_USER_TEXT,
+    FONT_TEXT,
+    RADIUS_XL,
+    SIZE_MD,
+)
+
 
 class SourceZoomTextBrowser(QTextBrowser):
     """QTextBrowser affichant une loupe centrée sous la souris sur les captures."""
@@ -161,10 +173,10 @@ class ChatBubble(QFrame):
         self.setSizePolicy(self.sizePolicy().Preferred, self.sizePolicy().Fixed)
         self.setMaximumWidth(10_000)
         self.setStyleSheet(
-            "QFrame#UserBubble { background:#DCEBFF; border:1px solid #B7D3F7; "
-            "border-radius:14px; }"
-            "QFrame#AssistantBubble { background:#EFF9F2; border:1px solid #C9E8D3; "
-            "border-radius:14px; }"
+            f"QFrame#UserBubble {{ background:{COLOR_PRIMARY_LIGHT}; border:1px solid {COLOR_PRIMARY_BORDER}; "
+            f"border-radius:{RADIUS_XL}; }}"
+            f"QFrame#AssistantBubble {{ background:{COLOR_SUCCESS_LIGHT}; border:1px solid {COLOR_SUCCESS_BORDER}; "
+            f"border-radius:{RADIUS_XL}; }}"
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
@@ -180,10 +192,10 @@ class ChatBubble(QFrame):
             self.browser.sizePolicy().Expanding,
             self.browser.sizePolicy().Fixed,
         )
+        text_color = COLOR_USER_TEXT if role == "user" else COLOR_SUCCESS_TEXT
         self.browser.setStyleSheet(
-            "QTextBrowser { background:transparent; border:none; padding:0; "
-            "color:%s; font-size:12px; }"
-            % ("#17324D" if role == "user" else "#183B28")
+            f"QTextBrowser {{ background:transparent; border:none; padding:0; "
+            f"color:{text_color}; font-family:{FONT_TEXT}; font-size:{SIZE_MD}; }}"
         )
         self.browser.document().setDocumentMargin(0)
         self.browser.anchorClicked.connect(self.link_clicked.emit)
