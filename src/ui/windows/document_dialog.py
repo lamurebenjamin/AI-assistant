@@ -12,6 +12,7 @@ from pathlib import Path
 from PyQt5.QtCore import (
     QEasingCurve,
     QEvent,
+    QPoint,
     QPropertyAnimation,
     QRect,
     QRectF,
@@ -23,12 +24,16 @@ from PyQt5.QtCore import (
 from PyQt5.QtGui import (
     QColor,
     QDesktopServices,
+    QFont,
     QIcon,
     QPainter,
     QPainterPath,
+    QPen,
     QPixmap,
+    QRegion,
 )
 from PyQt5.QtWidgets import (
+    QAction,
     QApplication,
     QDialog,
     QFileDialog,
@@ -36,54 +41,24 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
 try:
-    import fitz  # PyMuPDF
+    import pymupdf as fitz
 except ImportError:
-    fitz = None
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        fitz = None
 
 from src.config.schema import APP_DIR, LOGGER
-from src.ui.design_tokens import (
-    COLOR_BG_ACRYLIC,
-    COLOR_BG_PAGE,
-    COLOR_BG_SURFACE,
-    COLOR_BORDER,
-    COLOR_BORDER_ACRYLIC,
-    COLOR_BORDER_INPUT,
-    COLOR_BORDER_SUBTLE,
-    COLOR_DANGER,
-    COLOR_GRAY_200,
-    COLOR_GRAY_500,
-    COLOR_GRAY_700,
-    COLOR_HOVER_DARK,
-    COLOR_PRESS_DARK,
-    COLOR_PRIMARY,
-    COLOR_PRIMARY_HOVER,
-    COLOR_PRIMARY_LIGHT,
-    COLOR_SCROLLBAR_HOVER,
-    COLOR_SCROLLBAR_THUMB,
-    COLOR_SCROLLBAR_TRACK,
-    COLOR_TEXT_INVERSE,
-    COLOR_TEXT_MUTED,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    FONT_DISPLAY,
-    FONT_TEXT,
-    RADIUS_MD,
-    RADIUS_SM,
-    RADIUS_LG,
-    RADIUS_XL,
-    RADIUS_2XL,
-    SIZE_XS,
-    SIZE_SM,
-    SIZE_MD,
-    SIZE_LG,
-)
+import src.ui.design_tokens as t
 from src.ui.icons import ICONS_DARK, create_svg_icon, get_logo_pixmap
 from src.ui.theme import apply_acrylic_blur, apply_rounded_corners
 from src.ui.widgets.animated_buttons import AnimatedComposerButton, AnimatedHeaderButton
@@ -92,10 +67,36 @@ from src.ui.widgets.audio_bars import ScrollingAudioBars
 from src.ui.widgets.chat_bubble import ChatBubble
 from src.ui.widgets.message_editor import MessageTextEdit
 from src.ui.widgets.thinking_dots import ThinkingDots
+from src.ui.widgets.tool_call_widget import ToolCallWidget
+from src.ui.widgets.slash_command_popup import SlashCommandPopup
 from src.audio.recorder import AudioRecorderThread
+from core.skill_manager import SkillManager
+
+
+def _sync_module_tokens():
+    """Synchronise les tokens du module avec le thème actif dans design_tokens."""
+    for k in t.THEME_DARK.keys():
+        globals()[k] = getattr(t, k, None)
+    globals()["FONT_DISPLAY"] = t.FONT_DISPLAY
+    globals()["FONT_TEXT"] = t.FONT_TEXT
+    globals()["RADIUS_SM"] = t.RADIUS_SM
+    globals()["RADIUS_MD"] = t.RADIUS_MD
+    globals()["RADIUS_LG"] = t.RADIUS_LG
+    globals()["RADIUS_XL"] = t.RADIUS_XL
+    globals()["RADIUS_2XL"] = t.RADIUS_2XL
+    globals()["SIZE_XS"] = t.SIZE_XS
+    globals()["SIZE_SM"] = t.SIZE_SM
+    globals()["SIZE_MD"] = t.SIZE_MD
+    globals()["SIZE_LG"] = t.SIZE_LG
+    globals()["is_dark_theme"] = t.is_dark_theme
+
+
+_sync_module_tokens()
+
+
 class DocumentDialog(QDialog):
     """Fenêtre Ctrl+9 harmonisée avec les fenêtres de résultats et pensée comme un chat."""
-    ask_requested = pyqtSignal(list, str, object)
+    ask_requested = pyqtSignal(list, str, object, object)
 
     WINDOW_WIDTH = 390
     MIN_HEIGHT = 80
@@ -103,8 +104,15 @@ class DocumentDialog(QDialog):
     MAX_RESPONSE_HEIGHT = 440
 
     def __init__(self, parent=None):
+        _sync_module_tokens()
         super().__init__(parent)
         self.host = parent
+        if self.host is not None and hasattr(self.host, "skill_manager"):
+            self.skill_manager = self.host.skill_manager
+        else:
+            self.skill_manager = SkillManager()
+            self.skill_manager.discover()
+        self._pending_forced_tool = None
         self.setWindowTitle("Assistant IA")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -141,13 +149,20 @@ class DocumentDialog(QDialog):
         self._build_ui()
 
     def _build_ui(self):
+        composer_bg = "rgba(37, 37, 38, 220)" if is_dark_theme() else "#FFFFFF"
+        composer_border = "#3C3C3C" if is_dark_theme() else "#CBD7E4"
+        preview_bg = "rgba(45, 45, 45, 180)" if is_dark_theme() else "#F1F5F9"
+        preview_border = "#3C3C3C" if is_dark_theme() else "#DDE6F0"
+        sep_bg = "rgba(255, 255, 255, 25)" if is_dark_theme() else "rgba(0, 0, 0, 25)"
+        tooltip_bg = "#1F1F1F" if is_dark_theme() else "#FFFFFF"
+
         self.setStyleSheet(f"""
             QDialog {{ background: transparent; }}
             QToolTip {{
-                background-color: #FFFFFF;
+                background-color: {tooltip_bg};
                 color: {COLOR_TEXT_PRIMARY};
                 border: 1px solid {COLOR_BORDER};
-                border-radius: 0px;
+                border-radius: {RADIUS_SM};
                 padding: 5px 8px;
                 font-family: {FONT_TEXT};
                 font-size: {SIZE_MD};
@@ -161,10 +176,10 @@ class DocumentDialog(QDialog):
             QLabel {{ background: transparent; color: {COLOR_TEXT_PRIMARY}; border: none;
                      font-family: {FONT_TEXT}; font-size: {SIZE_MD}; }}
             QLabel#DocTitle {{ font-family: {FONT_DISPLAY};
-                              font-size: {SIZE_LG}; font-weight: 700; }}
+                              font-size: {SIZE_LG}; font-weight: 700; color: {COLOR_TEXT_PRIMARY}; }}
             QFrame#Composer {{
-                background: rgba(255, 255, 255, 135);
-                border: 1px solid rgba(0, 0, 0, 35);
+                background: {composer_bg};
+                border: 1px solid {composer_border};
                 border-radius: {RADIUS_XL};
             }}
             QFrame#DocumentCard {{
@@ -174,7 +189,7 @@ class DocumentDialog(QDialog):
                 border: none;
                 border-radius: 0;
             }}
-            QLabel#Preview {{ background: rgba(255, 255, 255, 100); border: 1px solid rgba(0, 0, 0, 30);
+            QLabel#Preview {{ background: {preview_bg}; border: 1px solid {preview_border};
                              border-radius: {RADIUS_MD}; padding: 3px; }}
             QTextEdit {{ background: transparent; border: none; padding: 6px 1px 4px 1px;
                         color: {COLOR_TEXT_PRIMARY}; font-family: {FONT_TEXT}; font-size: {SIZE_MD}; }}
@@ -194,9 +209,12 @@ class DocumentDialog(QDialog):
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ height: 0; background: transparent; border: none; }}
         """)
-        outer = QVBoxLayout(self); outer.setContentsMargins(1,1,1,1); outer.setSpacing(0)
-        self.panel = QFrame(); self.panel.setObjectName("DocPanel"); outer.addWidget(self.panel)
-        root = QVBoxLayout(self.panel); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
+        outer = QVBoxLayout(self); outer.setContentsMargins(0,0,0,0); outer.setSpacing(0)
+        self.panel = QFrame()
+        self.panel.setObjectName("DocPanel")
+        self.panel.setAttribute(Qt.WA_StyledBackground, True)
+        outer.addWidget(self.panel)
+        root = QVBoxLayout(self.panel); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
 
         header = QFrame(); header.setObjectName("DocHeader"); header.setFixedHeight(36)
         header.mousePressEvent=self._header_press; header.mouseMoveEvent=self._header_move; header.mouseReleaseEvent=self._header_release
@@ -209,9 +227,19 @@ class DocumentDialog(QDialog):
         close.clicked.connect(self.reject)
         header_layout.addWidget(close); root.addWidget(header)
 
-        self.header_separator=QFrame(); self.header_separator.setFixedHeight(1); self.header_separator.setStyleSheet("background:rgba(0,0,0,35);border:none;")
-        root.addWidget(self.header_separator)
-        self.content_widget=QWidget(); content=QVBoxLayout(self.content_widget); content.setContentsMargins(10,4,10,10); content.setSpacing(4)
+        self.separator_container = QWidget(self.panel)
+        sep_layout = QHBoxLayout(self.separator_container)
+        sep_layout.setContentsMargins(12, 0, 12, 0)
+        sep_layout.setSpacing(0)
+        self.header_separator = QFrame(self.separator_container)
+        self.header_separator.setFixedHeight(1)
+        self.header_separator.setStyleSheet(f"background:{sep_bg};border:none;")
+        sep_layout.addWidget(self.header_separator)
+        root.addWidget(self.separator_container)
+        self.content_widget = QWidget()
+        content = QVBoxLayout(self.content_widget)
+        content.setContentsMargins(10, 8, 10, 8)
+        content.setSpacing(4)
 
         self.drop_zone=QPushButton(self.content_widget); self.drop_zone.setObjectName("ActionIconButton")
         self.drop_zone.setIcon(create_svg_icon('<path d="M12 5v14M5 12h14"/>','#111111',1.8)); self.drop_zone.setIconSize(QSize(20,20)); self.drop_zone.setFixedHeight(42)
@@ -285,11 +313,11 @@ class DocumentDialog(QDialog):
         self.status.hide()
         content.addWidget(self.status)
 
-        self.composer=QFrame(); self.composer.setObjectName("Composer"); self.composer.setMinimumHeight(38); self.composer.setAcceptDrops(True); self.composer.installEventFilter(self)
+        self.composer=QFrame(); self.composer.setObjectName("Composer"); self.composer.setMinimumHeight(38); self.composer.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed); self.composer.setAcceptDrops(True); self.composer.installEventFilter(self)
         composer_outer=QVBoxLayout(self.composer); composer_outer.setContentsMargins(4,2,4,2); composer_outer.setSpacing(2)
         composer_outer.addWidget(self.document_area)
         composer_layout=QHBoxLayout(); composer_layout.setContentsMargins(0,0,0,0); composer_layout.setSpacing(0)
-        self.add_button=AnimatedComposerButton("add"); self.add_button.setToolTip("Ajouter un PDF ou une image"); self.add_button.clicked.connect(self._choose_files)
+        self.add_button=AnimatedComposerButton("add"); self.add_button.setToolTip("Ajouter un document ou lancer une skill"); self.add_button.clicked.connect(self._show_add_menu)
         self.question=MessageTextEdit(); self.question.setPlaceholderText("Message assistant IA"); self.question.setFixedHeight(30); self.question.setContentsMargins(0,0,0,0); self.question.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff); self.question.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.question.document().setDocumentMargin(0)
         self.question.setViewportMargins(0,0,0,0)
@@ -321,7 +349,19 @@ class DocumentDialog(QDialog):
         self.drop_feedback.setAttribute(Qt.WA_TransparentForMouseEvents,True)
         self.drop_feedback.setStyleSheet(f"QLabel{{background:{COLOR_PRIMARY_LIGHT};color:{COLOR_PRIMARY};border:2px solid {COLOR_PRIMARY};border-radius:{RADIUS_LG};font-family:{FONT_TEXT};font-size:{SIZE_MD};font-weight:700;}}")
         self.drop_feedback.hide()
+
+        # Le popup slash est un widget flottant (overlay) positionné au-dessus
+        # du compositeur. Il n'est PAS dans le layout — sa visibilité n'agrandit
+        # pas la fenêtre quand celle-ci a déjà atteint MAX_HEIGHT.
+        self.slash_popup = SlashCommandPopup(self.panel)
+        self.slash_popup.hide()
+        self.question.set_slash_popup(self.slash_popup)
+        self.question.slash_triggered.connect(self._on_slash_triggered)
+        self.question.slash_dismissed.connect(self._on_slash_dismissed)
+        self.slash_popup.action_selected.connect(self._on_slash_action_selected)
+        content.addStretch(1)
         content.addWidget(self.composer)
+
         root.addWidget(self.content_widget,1)
         self._update_height()
 
@@ -451,6 +491,15 @@ class DocumentDialog(QDialog):
                         LOGGER.exception("Impossible de générer la vignette jointe du PDF")
                         preview_path = ""
 
+            if is_pdf and (not preview_path or not os.path.isfile(preview_path)):
+                preview_path = os.path.join(
+                    tempfile.gettempdir(),
+                    f"assistant_turn_attachment_fb_{os.getpid()}_{time.monotonic_ns()}_{index}.png",
+                )
+                fb_pix = self._create_pdf_fallback_pixmap(68, 88)
+                fb_pix.save(preview_path, "PNG")
+                self._temp_files.add(preview_path)
+
             if not preview_path or not os.path.isfile(preview_path):
                 continue
 
@@ -516,6 +565,7 @@ class DocumentDialog(QDialog):
             item = self.conversation_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.setParent(None)
                 widget.deleteLater()
 
     def _render_conversation(self):
@@ -573,39 +623,57 @@ class DocumentDialog(QDialog):
             self.conversation_layout.addWidget(user_row)
 
             answer = self._answer_without_sources(turn.get("answer", ""))
-            if turn.get("loading", False) and not answer:
+            tools = turn.get("tools", [])
+            is_loading = turn.get("loading", False)
+            has_running_tool = any(t.get("status") == "running" for t in tools)
+
+            if tools or answer or is_loading:
                 assistant_row = QWidget(self.conversation_widget)
                 assistant_row.setStyleSheet("background:transparent;border:none;")
-                assistant_layout = QHBoxLayout(assistant_row)
+                assistant_layout = QVBoxLayout(assistant_row)
                 assistant_layout.setContentsMargins(0, 0, 50, 0)
-                assistant_layout.setSpacing(0)
-                thinking_bubble = ChatBubble("assistant", assistant_row)
-                thinking_bubble.setFixedWidth(78)
-                thinking_bubble.browser.hide()
-                dots = ThinkingDots(thinking_bubble)
-                thinking_bubble.layout().addWidget(dots, 0, Qt.AlignLeft | Qt.AlignVCenter)
-                thinking_bubble.setFixedHeight(44)
-                assistant_layout.addWidget(thinking_bubble, 0, Qt.AlignLeft | Qt.AlignTop)
-                assistant_layout.addStretch(1)
-                self.conversation_layout.addWidget(assistant_row)
-            if answer:
-                rendered = (
-                    self.host.markdown_to_html(answer)
-                    if self.host is not None
-                    else html.escape(answer).replace("\n", "<br>")
-                )
-                assistant_row = QWidget(self.conversation_widget)
-                assistant_row.setStyleSheet("background:transparent;border:none;")
-                assistant_layout = QHBoxLayout(assistant_row)
-                assistant_layout.setContentsMargins(0, 0, 50, 0)
-                assistant_layout.setSpacing(0)
-                assistant_bubble = ChatBubble("assistant", assistant_row)
-                assistant_bubble.setFixedWidth(bubble_width)
-                assistant_bubble.link_clicked.connect(self._open_source_link)
-                assistant_bubble.set_html(rendered + turn.get("sources_html", ""))
-                if turn_index == self.current_turn_index:
-                    self.current_assistant_bubble = assistant_bubble
-                assistant_layout.addWidget(assistant_bubble, 1)
+                assistant_layout.setSpacing(6)
+                assistant_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+
+                # A. Widgets des outils exécutés
+                for tool_info in tools:
+                    tool_widget = ToolCallWidget(tool_info, assistant_row)
+                    tool_widget.setFixedWidth(bubble_width)
+                    tool_widget.toggled.connect(self._on_tool_widget_toggled)
+                    assistant_layout.addWidget(tool_widget, 0, Qt.AlignLeft)
+
+                # B. Points de chargement (affichés uniquement si aucun outil n'est en cours et aucune réponse reçue)
+                if is_loading and not answer and not has_running_tool:
+                    dots_row = QWidget(assistant_row)
+                    dots_row.setStyleSheet("background:transparent;border:none;")
+                    dots_layout = QHBoxLayout(dots_row)
+                    dots_layout.setContentsMargins(0, 0, 0, 0)
+                    dots_layout.setSpacing(0)
+                    thinking_bubble = ChatBubble("assistant", dots_row)
+                    thinking_bubble.setFixedWidth(78)
+                    thinking_bubble.browser.hide()
+                    dots = ThinkingDots(thinking_bubble)
+                    thinking_bubble.layout().addWidget(dots, 0, Qt.AlignLeft | Qt.AlignVCenter)
+                    thinking_bubble.setFixedHeight(44)
+                    dots_layout.addWidget(thinking_bubble, 0, Qt.AlignLeft | Qt.AlignTop)
+                    dots_layout.addStretch(1)
+                    assistant_layout.addWidget(dots_row, 0, Qt.AlignLeft)
+
+                # C. Bulle de réponse du LLM
+                if answer:
+                    rendered = (
+                        self.host.markdown_to_html(answer)
+                        if self.host is not None
+                        else html.escape(answer).replace("\n", "<br>")
+                    )
+                    assistant_bubble = ChatBubble("assistant", assistant_row)
+                    assistant_bubble.setFixedWidth(bubble_width)
+                    assistant_bubble.link_clicked.connect(self._open_source_link)
+                    assistant_bubble.set_html(rendered + turn.get("sources_html", ""))
+                    if turn_index == self.current_turn_index:
+                        self.current_assistant_bubble = assistant_bubble
+                    assistant_layout.addWidget(assistant_bubble, 0, Qt.AlignLeft)
+
                 self.conversation_layout.addWidget(assistant_row)
         self.response.show()
         self.conversation_widget.adjustSize()
@@ -638,16 +706,34 @@ class DocumentDialog(QDialog):
         # The response and composer are stacked vertically. Computing the height
         # explicitly avoids the conversation being painted behind the composer.
         header_h = 36
-        separator_h = 1 if self.header_separator.isVisible() else 0
-        top_bottom_margins = 14
+        separator_h = 1 if self.separator_container.isVisible() else 0
+        top_bottom_margins = 16
         content_spacing = 4 if response_h else 0
         composer_h = max(38, self.composer.sizeHint().height())
         target = header_h + separator_h + top_bottom_margins + content_spacing + response_h + composer_h + 2
+
+        # Quand l'utilisateur tape '/' au début de la conversation (ou quand la fenêtre
+        # est encore petite), on agrandit la hauteur pour afficher entièrement le menu
+        # des commandes skills sans être coupé, tant que l'on ne dépasse pas MAX_HEIGHT.
+        if hasattr(self, 'slash_popup') and self.slash_popup.isVisible():
+            popup_h = self.slash_popup.content_height() if hasattr(self.slash_popup, 'content_height') else self.slash_popup.height()
+            min_needed_for_slash = header_h + separator_h + top_bottom_margins + composer_h + popup_h + 12
+            target = max(target, min_needed_for_slash)
+
+        # Une fois que la fenêtre Ctrl+9 a augmenté en hauteur, ne jamais rediminuer la hauteur
+        # pour que la position du bloc message assistant IA ne remonte pas.
+        if not self.is_collapsed:
+            target = max(self.height(), target, self.expanded_height)
+
         target = max(self.MIN_HEIGHT, min(self.MAX_HEIGHT, target))
 
         if not self.is_collapsed and abs(self.height() - target) > 2:
             self.setFixedHeight(target)
             self.expanded_height = target
+
+        # Repositionner le popup slash flottant au-dessus du compositeur
+        if hasattr(self, 'slash_popup') and self.slash_popup.isVisible():
+            self._position_slash_popup()
 
     def _add_sources_html(self, answer, documents):
         if fitz is None or not answer.strip(): return ""
@@ -739,12 +825,12 @@ class DocumentDialog(QDialog):
         self.setMinimumHeight(collapsed_height)
         if self.is_collapsed:
             target = max(self.MIN_HEIGHT, self.expanded_height)
-            self.header_separator.show()
+            self.separator_container.show()
             self.content_widget.show()
             expanding = True
         else:
             self.expanded_height = max(self.MIN_HEIGHT, current)
-            self.header_separator.hide()
+            self.separator_container.hide()
             target = collapsed_height
             expanding = False
 
@@ -786,8 +872,12 @@ class DocumentDialog(QDialog):
         QTimer.singleShot(0,self._update_height)
         QTimer.singleShot(0,self.focus_message_input)
     def _apply_effects(self):
-        try: apply_acrylic_blur(int(self.winId()),0xB8F5F5F5); apply_rounded_corners(int(self.winId()))
-        except Exception: pass
+        # Ne pas appliquer d'acrylique DWM ni d'attributs de coins DWM natifs :
+        # L'effet acrylique DWM force un rectangle opaque sur tout le bounding box
+        # du HWND, rendant les 4 coins rectangulaires au lieu d'arrondis.
+        # Avec Qt.WA_TranslucentBackground seul, Qt gère la transparence 32-bit ARGB
+        # et affiche directement le DocPanel avec ses coins arrondis parfaits.
+        pass
 
     def _update_question_height(self):
         """Agrandit la saisie jusqu'à trois lignes, puis active son défilement."""
@@ -867,6 +957,253 @@ class DocumentDialog(QDialog):
         paths=self._dragged_paths(event); self._set_drop_feedback(False)
         if paths:self._add_paths(paths); event.acceptProposedAction()
         else:event.ignore()
+    def _create_add_menu(self) -> QMenu:
+        menu = QMenu(self)
+        menu.setObjectName("ComposerAddMenu")
+        menu.setAttribute(Qt.WA_TranslucentBackground, False)
+        menu.setAutoFillBackground(True)
+        menu.setStyleSheet(f"""
+            QMenu#ComposerAddMenu {{
+                background-color: {COLOR_BG_SURFACE};
+                color: {COLOR_TEXT_PRIMARY};
+                border: 1px solid {COLOR_BORDER};
+                border-radius: {RADIUS_MD};
+                padding: 6px;
+                font-family: {FONT_TEXT};
+                font-size: {SIZE_MD};
+            }}
+            QMenu#ComposerAddMenu::item {{
+                background-color: transparent;
+                color: {COLOR_TEXT_PRIMARY};
+                min-height: 22px;
+                padding: 6px 20px 6px 12px;
+                margin: 2px;
+                border: none;
+                border-radius: {RADIUS_SM};
+            }}
+            QMenu#ComposerAddMenu::item:selected {{
+                background-color: {COLOR_PRIMARY};
+                color: {COLOR_TEXT_INVERSE};
+            }}
+            QMenu#ComposerAddMenu::separator {{
+                height: 1px;
+                background-color: {COLOR_BORDER_SUBTLE};
+                margin: 4px 8px;
+            }}
+        """)
+
+        # 1. Option Ajouter un PDF ou une image
+        act_add_file = menu.addAction("Ajouter un PDF ou une image")
+        act_add_file.triggered.connect(self._choose_files)
+
+        # 2. Séparateur
+        menu.addSeparator()
+
+        # 3. Liste des skills découverts avec sous-menus
+        skill_mgr = getattr(self, "skill_manager", None)
+        if skill_mgr is None and self.host is not None:
+            skill_mgr = getattr(self.host, "skill_manager", None)
+        if skill_mgr is None:
+            skill_mgr = SkillManager()
+            skill_mgr.discover()
+            self.skill_manager = skill_mgr
+
+        discovered_skills = sorted(skill_mgr.skills.keys()) if skill_mgr.skills else skill_mgr.list_skills()
+        if not discovered_skills:
+            discovered_skills = skill_mgr.discover()
+
+        skill_titles = {
+            "pdf": "Document PDF (.pdf)",
+            "docx": "Document Word (.docx)",
+            "excel": "Classeur Excel (.xlsx)",
+            "pptx": "Présentation PowerPoint (.pptx)",
+        }
+        tool_titles = {
+            "create_pdf": "Créer un document PDF",
+            "create_docx": "Créer un document Word",
+            "create_excel": "Créer un classeur Excel",
+            "create_pptx": "Créer une présentation PowerPoint",
+        }
+
+        for skill_name in discovered_skills:
+            skill_display = skill_titles.get(skill_name, f"Skill {skill_name.capitalize()}")
+            sub_menu = menu.addMenu(skill_display)
+            sub_menu.setObjectName("ComposerAddMenu")
+            sub_menu.setStyleSheet(menu.styleSheet())
+
+            skill_tools = [
+                t for t in skill_mgr.tools.values()
+                if t.get("skill") == skill_name
+            ]
+            if not skill_tools:
+                act_none = sub_menu.addAction("Aucune action disponible")
+                act_none.setEnabled(False)
+            else:
+                for tool in skill_tools:
+                    t_name = tool.get("name", "")
+                    t_desc = tool.get("description", "")
+                    t_title = tool_titles.get(t_name, t_name.replace("_", " ").capitalize())
+                    act_tool = sub_menu.addAction(t_title)
+                    if t_desc:
+                        act_tool.setToolTip(t_desc)
+                    act_tool.triggered.connect(
+                        lambda checked, s=skill_name, t=t_name: self._on_skill_tool_selected(s, t)
+                    )
+
+        return menu
+
+    def _show_add_menu(self):
+        menu = self._create_add_menu()
+        btn_pos = self.add_button.mapToGlobal(QPoint(0, 0))
+        menu_size = menu.sizeHint()
+        target_y = btn_pos.y() - menu_size.height() - 4
+        screen = QApplication.screenAt(btn_pos) or QApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            if target_y < avail.top():
+                target_y = btn_pos.y() + self.add_button.height() + 4
+        menu.exec_(QPoint(btn_pos.x(), target_y))
+
+    def _on_skill_tool_selected(self, skill_name: str, tool_name: str):
+        prompts = {
+            "create_pdf": "Créer un document PDF : ",
+            "create_docx": "Créer un document Word (.docx) : ",
+            "create_excel": "Créer un classeur Excel (.xlsx) : ",
+            "create_pptx": "Créer une présentation PowerPoint (.pptx) : ",
+        }
+        prompt_text = prompts.get(tool_name, f"Exécuter l'outil {tool_name} : ")
+        self.question.setPlainText(prompt_text)
+        self.question.setFocus()
+        cursor = self.question.textCursor()
+        cursor.movePosition(cursor.End)
+        self.question.setTextCursor(cursor)
+        self._pending_forced_tool = tool_name
+        self._update_send_visibility()
+        self._update_question_height()
+
+    # ------------------------------------------------------------------
+    # Slash-command popup handlers
+    # ------------------------------------------------------------------
+    def _build_slash_actions(self):
+        """Construit la liste d'actions à partir des skills découverts."""
+        skill_mgr = getattr(self, "skill_manager", None)
+        if skill_mgr is None and self.host is not None:
+            skill_mgr = getattr(self.host, "skill_manager", None)
+        if skill_mgr is None:
+            skill_mgr = SkillManager()
+            skill_mgr.discover()
+            self.skill_manager = skill_mgr
+
+        skill_titles = {
+            "pdf": "Document PDF",
+            "docx": "Document Word",
+            "excel": "Classeur Excel",
+            "pptx": "Présentation PowerPoint",
+        }
+        tool_titles = {
+            "create_pdf": "Créer un document PDF",
+            "create_docx": "Créer un document Word",
+            "create_excel": "Créer un classeur Excel",
+            "create_pptx": "Créer une présentation PowerPoint",
+        }
+        tool_icons = {
+            "create_pdf": "📄",
+            "create_docx": "📝",
+            "create_excel": "📊",
+            "create_pptx": "📽️",
+        }
+
+        actions = []
+        discovered = sorted(skill_mgr.skills.keys()) if skill_mgr.skills else skill_mgr.list_skills()
+        if not discovered:
+            discovered = skill_mgr.discover()
+
+        for skill_name in discovered:
+            skill_tools = [
+                t for t in skill_mgr.tools.values()
+                if t.get("skill") == skill_name
+            ]
+            for tool in skill_tools:
+                t_name = tool.get("name", "")
+                t_desc = tool.get("description", "")
+                t_title = tool_titles.get(t_name, t_name.replace("_", " ").capitalize())
+                actions.append({
+                    "command": f"/{t_name}",
+                    "title": t_title,
+                    "description": t_desc,
+                    "skill": skill_titles.get(skill_name, skill_name.capitalize()),
+                    "icon": tool_icons.get(t_name, "🔧"),
+                    "tool_name": t_name,
+                    "skill_name": skill_name,
+                })
+        return actions
+
+    def _position_slash_popup(self):
+        """Positionne le popup slash comme overlay flottant au-dessus du compositeur."""
+        if not hasattr(self, 'composer') or not hasattr(self, 'panel') or not hasattr(self, 'slash_popup'):
+            return
+        # La hauteur du popup s'adapte exactement à son contenu (pas de marge vide)
+        popup_h = self.slash_popup.content_height() if hasattr(self.slash_popup, 'content_height') else self.slash_popup.height()
+        popup_w = self.composer.width()
+        # Obtenir la position du compositeur par rapport au panel
+        composer_pos = self.composer.mapTo(self.panel, self.composer.rect().topLeft())
+        # Positionner juste au-dessus du compositeur
+        x = composer_pos.x()
+        y = composer_pos.y() - popup_h - 6
+        y = max(38, y)  # ne pas sortir au-dessus du header
+        self.slash_popup.setFixedWidth(popup_w)
+        self.slash_popup.setFixedHeight(popup_h)
+        self.slash_popup.move(x, y)
+        self.slash_popup.raise_()
+
+    def _on_slash_triggered(self, query: str, slash_pos: int):
+        """Appelé quand l'utilisateur tape '/' dans le champ de saisie."""
+        if not self.slash_popup.all_actions:
+            self.slash_popup.set_actions(self._build_slash_actions())
+
+        has_results = self.slash_popup.filter_actions(query)
+        if has_results or not query:
+            self.slash_popup.show()
+            self._update_height()
+            self._position_slash_popup()
+            self.slash_popup.raise_()
+        else:
+            self._on_slash_dismissed()
+
+    def _on_slash_dismissed(self):
+        """Masque le popup overlay et restaure la hauteur de la fenêtre."""
+        if self.slash_popup.isVisible():
+            self.slash_popup.hide()
+            self._update_height()
+
+    def _on_slash_action_selected(self, action: dict):
+        """Appelé quand l'utilisateur sélectionne une action du menu slash."""
+        tool_name = action.get("tool_name", "")
+        skill_name = action.get("skill_name", "")
+
+        # Remplacer le texte "/commande" par le prompt de la skill
+        full_text = self.question.toPlainText()
+        import re as _re
+        cleaned = _re.sub(r'(?:^|\s)/\S*$', '', full_text).strip()
+
+        prompts = {
+            "create_pdf": "Créer un document PDF : ",
+            "create_docx": "Créer un document Word (.docx) : ",
+            "create_excel": "Créer un classeur Excel (.xlsx) : ",
+            "create_pptx": "Créer une présentation PowerPoint (.pptx) : ",
+        }
+        prompt_text = prompts.get(tool_name, f"Exécuter l'outil {tool_name} : ")
+        new_text = f"{cleaned} {prompt_text}".strip() if cleaned else prompt_text
+        self.question.setPlainText(new_text)
+        self.question.setFocus()
+        cursor = self.question.textCursor()
+        cursor.movePosition(cursor.End)
+        self.question.setTextCursor(cursor)
+        self._pending_forced_tool = tool_name
+        self._update_send_visibility()
+        self._update_question_height()
+        self._on_slash_dismissed()
+
     def _choose_files(self):
         paths,_=QFileDialog.getOpenFileNames(self,"Ajouter des documents","","Documents (*.pdf *.png *.jpg *.jpeg *.webp *.bmp *.gif *.tif *.tiff)")
         self._add_paths(paths)
@@ -909,22 +1246,34 @@ class DocumentDialog(QDialog):
                     try:
                         doc = fitz.open(path)
                         try:
-                            pix = doc.load_page(max(0, first - 1)).get_pixmap(matrix=fitz.Matrix(1.2, 1.2), alpha=False)
+                            page_idx = max(0, min(first - 1, doc.page_count - 1))
+                            pix = doc.load_page(page_idx).get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
                             source.loadFromData(pix.tobytes('png'))
                         finally:
                             doc.close()
                     except Exception:
-                        LOGGER.exception("Impossible de générer la vignette PDF")
+                        LOGGER.exception("Impossible de générer la vignette PDF pour %s", path)
                 if source.isNull():
-                    source = QPixmap(preview_w, pdf_preview_h - 6); source.fill(QColor('#EEF3F8'))
+                    source = self._create_pdf_fallback_pixmap(preview_w, pdf_preview_h - 6)
                 shown = source.scaled(preview_w, pdf_preview_h - 6, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 x = (cell_w - shown.width()) // 2
                 y = 4 + max(0, (pdf_preview_h - 6 - shown.height()) // 2)
-                rounded = QPixmap(shown.size()); rounded.fill(Qt.transparent)
-                painter = QPainter(rounded); painter.setRenderHint(QPainter.Antialiasing, True)
-                clip = QPainterPath(); clip.addRoundedRect(QRectF(rounded.rect()), 6, 6)
-                painter.setClipPath(clip); painter.drawPixmap(0, 0, shown); painter.end()
-                label = QLabel(holder); label.setPixmap(rounded); label.setGeometry(x, y, shown.width(), shown.height())
+                rounded = QPixmap(shown.size())
+                rounded.fill(Qt.transparent)
+                painter = QPainter(rounded)
+                painter.setRenderHint(QPainter.Antialiasing, True)
+                rect = QRectF(0.5, 0.5, shown.width() - 1.0, shown.height() - 1.0)
+                clip = QPainterPath()
+                clip.addRoundedRect(rect, 5.0, 5.0)
+                painter.setClipPath(clip)
+                painter.drawPixmap(0, 0, shown)
+                painter.setPen(QPen(QColor(0, 0, 0, 32), 1.0))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRoundedRect(rect, 5.0, 5.0)
+                painter.end()
+                label = QLabel(holder)
+                label.setPixmap(rounded)
+                label.setGeometry(x, y, shown.width(), shown.height())
 
                 pdf_name = Path(path).stem
                 displayed_name = pdf_name if len(pdf_name) <= 12 else pdf_name[:12] + "..."
@@ -1044,13 +1393,73 @@ class DocumentDialog(QDialog):
             self.conversation_widget.adjustSize()
             self._scroll_to_bottom()
 
+    def _on_tool_widget_toggled(self):
+        self.conversation_layout.activate()
+        self.conversation_widget.adjustSize()
+        self._update_height()
+        self._scroll_to_bottom()
+
+    def record_tool_event(self, phase: str, name: str, detail: str):
+        """Enregistre et met à jour l'événement d'outil dans la conversation."""
+        if self.current_turn_index < 0 and self.turns:
+            self.current_turn_index = len(self.turns) - 1
+        if self.current_turn_index < 0:
+            return
+        turn = self.turns[self.current_turn_index]
+        tools = turn.setdefault("tools", [])
+
+        if phase == "appel":
+            tools.append({
+                "name": name,
+                "status": "running",
+                "arguments": detail or "",
+                "result": "",
+                "expanded": False,
+            })
+        elif phase == "résultat":
+            for t in reversed(tools):
+                if t.get("name") == name or t.get("status") == "running":
+                    t["status"] = "done"
+                    if detail:
+                        t["result"] = detail
+                    break
+            else:
+                tools.append({
+                    "name": name,
+                    "status": "done",
+                    "arguments": "",
+                    "result": detail or "",
+                    "expanded": False,
+                })
+        elif phase == "erreur":
+            for t in reversed(tools):
+                if t.get("name") == name or t.get("status") == "running":
+                    t["status"] = "error"
+                    if detail:
+                        t["result"] = detail
+                    break
+            else:
+                tools.append({
+                    "name": name,
+                    "status": "error",
+                    "arguments": "",
+                    "result": detail or "",
+                    "expanded": False,
+                })
+
+        self._render_conversation()
+
     def finish_response(self):
         self.streaming_response_active = False
         self.stream_render_timer.stop()
         self.pending_stream_render = False
-        if self.current_turn_index>=0:
-            self.turns[self.current_turn_index]["loading"]=False
-        self.status.clear(); self.status.hide()
+        if self.current_turn_index >= 0:
+            self.turns[self.current_turn_index]["loading"] = False
+            for t in self.turns[self.current_turn_index].get("tools", []):
+                if t.get("status") == "running":
+                    t["status"] = "done"
+        self.status.clear()
+        self.status.hide()
         self.stop_generation_button.setEnabled(True)
         self._update_send_visibility()
         self._render_conversation()
@@ -1068,10 +1477,12 @@ class DocumentDialog(QDialog):
         if not question:
             self.status.setText("Saisissez une question ou utilisez le microphone")
             return
+        forced_tool = getattr(self, "_pending_forced_tool", None)
+        self._pending_forced_tool = None
         documents, attachments_html = self._take_current_attachments()
         self.begin_response(question, attachments_html)
         self.question.clear()
-        self.ask_requested.emit(documents, question, None)
+        self.ask_requested.emit(documents, question, None, forced_tool)
     def _set_inline_recording_visual(self,active):
         self.question.setVisible(not active)
         # Un clic pendant la dictée termine l'enregistrement puis envoie
@@ -1098,7 +1509,7 @@ class DocumentDialog(QDialog):
             return
         documents, attachments_html = self._take_current_attachments()
         self.begin_response("Question audio", attachments_html)
-        self.ask_requested.emit(documents, "", data)
+        self.ask_requested.emit(documents, "", data, None)
     def _audio_error(self, message):
         self.is_recording = False
         self.audio_thread = None

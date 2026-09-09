@@ -21,6 +21,12 @@ def format_inline_markdown(text: str) -> str:
         protected_links.append(link_html)
         return token
 
+    from src.ui.design_tokens import is_dark_theme
+    dark = is_dark_theme()
+    link_color = "#58A6FF" if dark else "#1565C0"
+    code_bg = "rgba(255, 255, 255, 18)" if dark else "rgba(0, 0, 0, 18)"
+    code_color = "#E0E0E0" if dark else "#111111"
+
     def source_link(match):
         filename = match.group(1).strip().lstrip("-•* ").strip()
         page = match.group(2)
@@ -29,7 +35,7 @@ def format_inline_markdown(text: str) -> str:
         ).decode("ascii").rstrip("=")
         return protect_link(
             f'<a href="source:{page}:{encoded_name}" '
-            f'style="color:#1565C0; text-decoration:underline;">'
+            f'style="color:{link_color}; text-decoration:underline;">'
             f"{filename} • p. {page}</a>"
         )
 
@@ -45,7 +51,7 @@ def format_inline_markdown(text: str) -> str:
         uri = match.group(2)
         return protect_link(
             f'<a href="{uri}" '
-            f'style="color:#1565C0; text-decoration:underline;">'
+            f'style="color:{link_color}; text-decoration:underline;">'
             f"{label}</a>"
         )
 
@@ -57,7 +63,7 @@ def format_inline_markdown(text: str) -> str:
     )
     escaped = re.sub(
         r"`([^`\n]+)`",
-        r'<code style="background-color:rgba(0,0,0,18); padding:1px 4px; border-radius:4px; font-family:Consolas, monospace;">\1</code>',
+        rf'<code style="background-color:{code_bg}; color:{code_color}; padding:1px 4px; border-radius:4px; font-family:Consolas, monospace;">\1</code>',
         escaped,
     )
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
@@ -102,8 +108,11 @@ def markdown_to_html(markdown_text: str) -> str:
             close_list()
             if in_code:
                 code = html.escape("\n".join(code_lines), quote=False)
+                from src.ui.design_tokens import is_dark_theme
+                pre_bg = "#1E1E1E" if is_dark_theme() else "rgba(0,0,0,18)"
+                pre_border = "#3C3C3C" if is_dark_theme() else "rgba(0,0,0,30)"
                 output.append(
-                    '<pre style="margin:4px 0 8px 0; padding:8px; background-color:rgba(0,0,0,18); border-radius:6px; white-space:pre-wrap; font-family:Consolas, monospace;">'
+                    f'<pre style="margin:4px 0 8px 0; padding:8px; background-color:{pre_bg}; border:1px solid {pre_border}; border-radius:6px; white-space:pre-wrap; font-family:Consolas, monospace;">'
                     f"{code}</pre>"
                 )
                 code_lines.clear()

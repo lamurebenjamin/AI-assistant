@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -37,15 +38,17 @@ from src.ui.design_tokens import (
     COLOR_BORDER_SUBTLE,
     COLOR_PRIMARY,
     COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY,
     FONT_TEXT,
     RADIUS_LG,
     RADIUS_MD,
     SIZE_LG,
     SIZE_MD,
+    is_dark_theme,
 )
 from src.ui.icons import ICONS, ICONS_DARK, get_logo_pixmap
 from src.ui.stylesheet import build_settings_qss
-from src.ui.theme import apply_rounded_corners
+from src.ui.theme import apply_app_theme, apply_rounded_corners
 from src.ui.widgets.animated_buttons import AnimatedHeaderButton
 from src.audio.recorder import AudioRecorderThread
 from src.monitoring.server_status import ServerStatusThread
@@ -129,24 +132,30 @@ class SettingsDialog(QDialog):
         header_layout.addWidget(close_btn, 0, Qt.AlignVCenter)
         panel_layout.addWidget(header)
 
-        separator = QFrame(self.panel)
-        separator.setFixedHeight(1)
-        separator.setStyleSheet("background: rgba(0,0,0,35); border: none;")
-        panel_layout.addWidget(separator)
+        self.separator_wrapper = QWidget(self.panel)
+        sep_layout = QHBoxLayout(self.separator_wrapper)
+        sep_layout.setContentsMargins(12, 0, 12, 0)
+        sep_layout.setSpacing(0)
+        self.separator = QFrame(self.separator_wrapper)
+        self.separator.setFixedHeight(1)
+        sep_bg = "rgba(255,255,255,25)" if is_dark_theme() else "rgba(0,0,0,35)"
+        self.separator.setStyleSheet(f"background: {sep_bg}; border: none;")
+        sep_layout.addWidget(self.separator)
+        panel_layout.addWidget(self.separator_wrapper)
 
-        content_widget = QWidget(self.panel)
-        content_widget.setObjectName("SettingsContent")
-        content_widget.setEnabled(True)
-        content_widget.setAttribute(Qt.WA_TransparentForMouseEvents, False)
-        content_widget.setAttribute(Qt.WA_NoSystemBackground, False)
-        content_widget.setAutoFillBackground(True)
-        content_widget.setStyleSheet("QWidget#SettingsContent { background-color: #F8FAFC; }")
-        content_layout = QVBoxLayout(content_widget)
+        self.content_widget = QWidget(self.panel)
+        self.content_widget.setObjectName("SettingsContent")
+        self.content_widget.setEnabled(True)
+        self.content_widget.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        self.content_widget.setAttribute(Qt.WA_NoSystemBackground, False)
+        self.content_widget.setAutoFillBackground(True)
+        self.content_widget.setStyleSheet(f"QWidget#SettingsContent {{ background-color: {COLOR_BG_PAGE}; }}")
+        content_layout = QVBoxLayout(self.content_widget)
         content_layout.setContentsMargins(22, 18, 22, 18)
         content_layout.setSpacing(12)
 
         # Organisation des paramètres par domaine fonctionnel.
-        self.settings_tabs = QTabWidget(content_widget)
+        self.settings_tabs = QTabWidget(self.content_widget)
         self.settings_tabs.setDocumentMode(True)
 
         llm_tab = QWidget()
@@ -164,9 +173,45 @@ class SettingsDialog(QDialog):
         shortcuts_layout.setContentsMargins(10, 12, 10, 10)
         shortcuts_layout.setSpacing(12)
 
+        appearance_tab = QWidget()
+        appearance_layout = QVBoxLayout(appearance_tab)
+        appearance_layout.setContentsMargins(16, 16, 16, 16)
+        appearance_layout.setSpacing(16)
+
+        theme_box = QGroupBox("Thème de l'application", appearance_tab)
+        theme_box_layout = QVBoxLayout(theme_box)
+        theme_box_layout.setContentsMargins(14, 14, 14, 14)
+        theme_box_layout.setSpacing(10)
+
+        theme_row = QHBoxLayout()
+        theme_lbl = QLabel("Mode d'affichage :", theme_box)
+        theme_lbl.setStyleSheet("font-weight: 600;")
+        self.theme_combo = QComboBox(theme_box)
+        self.theme_combo.addItem("🌙 Sombre (Antigravity)", "dark")
+        self.theme_combo.addItem("☀️ Clair", "light")
+        current_t = self.config.get("theme", "dark")
+        self.theme_combo.setCurrentIndex(0 if current_t == "dark" else 1)
+        self.theme_combo.currentIndexChanged.connect(self._on_theme_preview_changed)
+        theme_row.addWidget(theme_lbl)
+        theme_row.addWidget(self.theme_combo, 1)
+        theme_box_layout.addLayout(theme_row)
+
+        theme_desc = QLabel(
+            "Le mode sombre reproduit fidèlement la charte graphique et les contrastes de Google Antigravity "
+            "(fond #1E1E1E, surfaces #252526, accents bleus #0078D4/#58A6FF et icônes claires).",
+            theme_box,
+        )
+        theme_desc.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
+        theme_desc.setWordWrap(True)
+        theme_box_layout.addWidget(theme_desc)
+
+        appearance_layout.addWidget(theme_box)
+        appearance_layout.addStretch(1)
+
         self.settings_tabs.addTab(llm_tab, "LLM")
         self.settings_tabs.addTab(voice_tab, "Assistant vocal")
         self.settings_tabs.addTab(shortcuts_tab, "Raccourcis")
+        self.settings_tabs.addTab(appearance_tab, "Apparence")
         content_layout.addWidget(self.settings_tabs, 1)
 
         # URL, état du serveur et modèle affichés sur trois lignes distinctes.
@@ -382,11 +427,11 @@ class SettingsDialog(QDialog):
         bottom_layout.addWidget(btn_save)
         content_layout.addLayout(bottom_layout)
 
-        panel_layout.addWidget(content_widget)
+        panel_layout.addWidget(self.content_widget)
 
         self.main_layout.addWidget(self.panel)
         self.panel.setEnabled(True)
-        content_widget.setEnabled(True)
+        self.content_widget.setEnabled(True)
         self.populate_list()
         self.api_input.setFocus(Qt.OtherFocusReason)
 
@@ -714,6 +759,19 @@ class SettingsDialog(QDialog):
         self.voice_test_btn.setText("Arrêter le test")
         self.mic_test_thread.start()
 
+    def _on_theme_preview_changed(self):
+        new_theme = self.theme_combo.currentData() or "dark"
+        app = QApplication.instance()
+        if app:
+            apply_app_theme(app, new_theme)
+        self.setStyleSheet(build_settings_qss())
+        if hasattr(self, 'content_widget'):
+            from src.ui.design_tokens import COLOR_BG_PAGE
+            self.content_widget.setStyleSheet(f"QWidget#SettingsContent {{ background-color: {COLOR_BG_PAGE}; }}")
+        if hasattr(self, 'separator'):
+            sep_bg = "rgba(255,255,255,25)" if is_dark_theme() else "rgba(0,0,0,35)"
+            self.separator.setStyleSheet(f"background: {sep_bg}; border: none;")
+
     def save(self):
         selected = self.voice_device_combo.currentData()
         self.config['voice_input'] = copy.deepcopy(self.temp_voice_config)
@@ -725,6 +783,12 @@ class SettingsDialog(QDialog):
         self.config['api_url'] = self.api_input.text().strip() or DEFAULT_CONFIG['api_url']
         self.config['llama_server'] = self.collect_server_config()
         self.config['actions'] = self.temp_actions
+        if hasattr(self, 'theme_combo'):
+            chosen_theme = self.theme_combo.currentData() or "dark"
+            self.config['theme'] = chosen_theme
+            app = QApplication.instance()
+            if app:
+                apply_app_theme(app, chosen_theme)
         save_config(self.config)
         self.accept()
 

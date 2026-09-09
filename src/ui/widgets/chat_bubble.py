@@ -4,17 +4,8 @@ from PyQt5.QtCore import QRectF, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPixmap
 from PyQt5.QtWidgets import QFrame, QTextBrowser, QVBoxLayout
 
-from src.ui.design_tokens import (
-    COLOR_PRIMARY_BORDER,
-    COLOR_PRIMARY_LIGHT,
-    COLOR_SUCCESS_BORDER,
-    COLOR_SUCCESS_LIGHT,
-    COLOR_SUCCESS_TEXT,
-    COLOR_USER_TEXT,
-    FONT_TEXT,
-    RADIUS_XL,
-    SIZE_MD,
-)
+import src.ui.design_tokens as t
+
 
 
 class SourceZoomTextBrowser(QTextBrowser):
@@ -172,14 +163,19 @@ class ChatBubble(QFrame):
         self.setObjectName("UserBubble" if role == "user" else "AssistantBubble")
         self.setSizePolicy(self.sizePolicy().Preferred, self.sizePolicy().Fixed)
         self.setMaximumWidth(10_000)
-        self.setStyleSheet(
-            f"QFrame#UserBubble {{ background:{COLOR_PRIMARY_LIGHT}; border:1px solid {COLOR_PRIMARY_BORDER}; "
-            f"border-radius:{RADIUS_XL}; }}"
-            f"QFrame#AssistantBubble {{ background:{COLOR_SUCCESS_LIGHT}; border:1px solid {COLOR_SUCCESS_BORDER}; "
-            f"border-radius:{RADIUS_XL}; }}"
-        )
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
+        if role == "user":
+            self.setStyleSheet(
+                f"QFrame#UserBubble {{ background:{t.COLOR_PRIMARY_LIGHT}; border:1px solid {t.COLOR_PRIMARY_BORDER}; "
+                f"border-radius:{t.RADIUS_XL}; }}"
+            )
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(12, 10, 12, 10)
+        else:
+            self.setStyleSheet(
+                "QFrame#AssistantBubble { background: transparent; border: none; border-radius: 0; }"
+            )
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(0)
         self.browser = SourceZoomTextBrowser(self)
         self.browser.setReadOnly(True)
@@ -192,10 +188,10 @@ class ChatBubble(QFrame):
             self.browser.sizePolicy().Expanding,
             self.browser.sizePolicy().Fixed,
         )
-        text_color = COLOR_USER_TEXT if role == "user" else COLOR_SUCCESS_TEXT
+        text_color = t.COLOR_USER_TEXT if role == "user" else t.COLOR_TEXT_PRIMARY
         self.browser.setStyleSheet(
             f"QTextBrowser {{ background:transparent; border:none; padding:0; "
-            f"color:{text_color}; font-family:{FONT_TEXT}; font-size:{SIZE_MD}; }}"
+            f"color:{text_color}; font-family:{t.FONT_TEXT}; font-size:{t.SIZE_MD}; }}"
         )
         self.browser.document().setDocumentMargin(0)
         self.browser.anchorClicked.connect(self.link_clicked.emit)

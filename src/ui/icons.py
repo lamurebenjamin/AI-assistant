@@ -74,6 +74,21 @@ def get_logo_pixmap(size: int = 16, app_dir: str = "") -> QPixmap:
     return icon.pixmap(size, size)
 
 
+def get_app_icon(app_dir: str = "") -> QIcon:
+    """Retourne un QIcon multi-résolution contenant les tailles standards Windows
+    (16, 20, 24, 32, 40, 48, 64, 128, 256).
+
+    Inclure explicitement 40x40 élimine l'avertissement :
+    QSystemTrayIcon::showMessage: Wrong icon size (32x32), please add standard one: 40x40
+    """
+    icon = QIcon()
+    for size in (16, 20, 24, 32, 40, 48, 64, 128, 256):
+        pix = get_logo_pixmap(size, app_dir)
+        if not pix.isNull():
+            icon.addPixmap(pix)
+    return icon
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Chemins SVG partagés (pour éviter la duplication dans initialize_icons)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -86,41 +101,56 @@ _SVG = {
     "cancel":     '<path d="M18 6L6 18M6 6l12 12"/>',
     "settings":   '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09A1.65 1.65 0 0 0 19.4 15z"/>',
     "regenerate": '<path d="M20 6v5h-5"/><path d="M4 18v-5h5"/><path d="M18.5 9A7 7 0 0 0 6.7 6.7L4 9M20 15l-2.7 2.3A7 7 0 0 1 5.5 15"/>',
-    # Deux carrés symétriques autour du centre exact du viewBox 24×24.
-    "copy":       '<rect x="4" y="4" width="12" height="12" rx="2"/><rect x="8" y="8" width="12" height="12" rx="2"/>',
-    "check":      '<path d="M5 12.5l4.2 4.2L19 7"/>',
-    "close":      '<path d="M6 6l12 12M18 6L6 18"/>',
-    "speak":      '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18 6a8.5 8.5 0 0 1 0 12"/>',
-    "stop":       '<rect x="6" y="6" width="12" height="12" rx="1"/>',
+    # Icône moderne Feather/Lucide sans chevauchement interne.
+    "copy":         '<rect width="13" height="13" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    "check":        '<path d="M5 12.5l4.2 4.2L19 7"/>',
+    "close":        '<path d="M6 6l12 12M18 6L6 18"/>',
+    "speak":        '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18 6a8.5 8.5 0 0 1 0 12"/>',
+    "speak_filled": '<path d="M11 5L6 9H2v6h4l5 4V5z" fill="#111111"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18 6a8.5 8.5 0 0 1 0 12"/>',
+    "stop":         '<rect x="6" y="6" width="12" height="12" rx="1"/>',
 }
 
 # Épaisseurs de trait spécifiques (dark only)
 _DARK_STROKE = {
-    "copy":   1.2,
-    "check":  2.2,
-    "close":  1.2,
-    "speak":  1.6,
-    "stop":   1.6,
+    "copy":         1.4,
+    "check":        2.2,
+    "close":        1.2,
+    "speak":        1.6,
+    "speak_filled": 2.0,
+    "stop":         1.6,
 }
 
 
-def initialize_icons() -> None:
-    """Initialise les dicts d'icônes après la création de QApplication.
+def update_icons_for_theme(is_dark: bool = True) -> None:
+    """Met à jour les registres d'icônes selon le thème actif.
 
-    Utilise ``.clear() + .update()`` pour muter les objets dict existants
-    plutôt que de les réassigner — tous les modules ayant fait
-    ``from src.ui.icons import ICONS_DARK`` conservent leur référence.
-
-    ``ICONS`` et ``ICONS_DARK`` contiennent exactement les mêmes clés.
+    En thème sombre, ICONS_DARK reçoit des icônes claires (#E0E0E0) pour
+    que tous les modules important ICONS_DARK bénéficient d'icônes visibles
+    sur les fonds sombres d'Antigravity.
     """
-    light = {key: create_svg_icon(path) for key, path in _SVG.items()}
+    light_color = "#E0E0E0"
+    dark_color = "#111111"
+
+    light = {
+        key: create_svg_icon(path, light_color, _DARK_STROKE.get(key, 1.8))
+        for key, path in _SVG.items()
+    }
     dark = {
-        key: create_svg_icon(path, "#111111", _DARK_STROKE.get(key, 2))
+        key: create_svg_icon(path, dark_color, _DARK_STROKE.get(key, 2))
         for key, path in _SVG.items()
     }
 
-    # Mutation en place — préserve les références capturées par les importeurs.
     ICONS.clear()
     ICONS.update(light)
     ICONS_DARK.clear()
-    ICONS_DARK.update(dark)
+    if is_dark:
+        ICONS_DARK.update(light)
+    else:
+        ICONS_DARK.update(dark)
+
+
+def initialize_icons(is_dark: bool = True) -> None:
+    """Initialise les dicts d'icônes après la création de QApplication."""
+    from src.ui.design_tokens import is_dark_theme
+    update_icons_for_theme(is_dark_theme())
+

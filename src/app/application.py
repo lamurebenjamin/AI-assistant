@@ -12,9 +12,10 @@ from src.app.hotkey_managers import (
     VoiceHotkeyManager,
 )
 from src.config.schema import LOG_FORMAT, LOGGER
+from src.config.manager import load_config
 from src.llm.server_manager import get_server_manager
 from src.ui.icons import initialize_icons
-from src.ui.theme import apply_light_popup_theme
+from src.ui.theme import apply_app_theme
 from src.ui.tray import create_tray_icon
 from src.ui.windows.assistant_window import AssistantWindow
 
@@ -32,7 +33,9 @@ def run() -> int:
             pass
 
     app = QApplication(sys.argv)
-    apply_light_popup_theme(app)
+    cfg = load_config()
+    theme_name = cfg.get("theme", "dark")
+    apply_app_theme(app, theme_name)
     app.setApplicationName("Assistant IA")
     app.setApplicationDisplayName("Assistant IA")
     app.setQuitOnLastWindowClosed(False)

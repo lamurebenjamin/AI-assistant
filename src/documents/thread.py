@@ -30,6 +30,7 @@ class DocumentAnalysisThread(QThread):
         audio_data: Optional[bytes] = None,
         history: Optional[list] = None,
         skill_manager=None,
+        forced_tool: Optional[str] = None,
     ):
         super().__init__(parent)
         self.api_url = api_url
@@ -39,6 +40,7 @@ class DocumentAnalysisThread(QThread):
         self.audio_data = audio_data
         self.history = list(history or [])
         self.skill_manager = skill_manager
+        self.forced_tool = forced_tool
         self._stop_requested = False
         self._agent: Optional[LlamaThread] = None
         self.source_pages: list = []
@@ -231,7 +233,9 @@ class DocumentAnalysisThread(QThread):
                 )
             else:
                 instruction = (
-                    "Réponds directement, clairement et sans section Sources.\n\n"
+                    "Réponds directement, clairement et sans section Sources. "
+                    "Tu disposes d'outils pour créer des documents (Word, Excel, PowerPoint, PDF). "
+                    "Si une création de document est demandée, utilise obligatoirement l'outil approprié.\n\n"
                     f"{history_section}QUESTION ACTUELLE :\n{self.question}\n"
                 )
 
@@ -257,7 +261,10 @@ class DocumentAnalysisThread(QThread):
                             "utilise les outils disponibles lorsqu'une action réelle est demandée, par exemple "
                             "créer un fichier, et ne simule jamais leur exécution."
                             if has_documents
-                            else "Tu es un assistant IA utile. Réponds directement."
+                            else "Tu es un assistant IA utile et un agent d'exécution. Réponds directement. "
+                                 "Tu disposes d'outils pour créer des fichiers (Word, Excel, PowerPoint, PDF). "
+                                 "Utilise les outils disponibles lorsqu'une action réelle est demandée "
+                                 "et ne simule jamais leur exécution."
                         ),
                     },
                     {"role": "user", "content": content},
@@ -281,6 +288,7 @@ class DocumentAnalysisThread(QThread):
                     model=self.model,
                     skill_manager=self.skill_manager,
                     enable_tools=True,
+                    forced_tool=self.forced_tool,
                 )
                 agent.new_text.connect(self.new_text.emit)
                 agent.tool_event.connect(self.tool_event.emit)

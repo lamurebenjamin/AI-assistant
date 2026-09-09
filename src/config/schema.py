@@ -14,6 +14,7 @@ LOGGER = logging.getLogger("Assistant")
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 
 DEFAULT_CONFIG = {
+    "theme": "dark",
     "hotkeys_enabled": True,
     "api_url": "http://127.0.0.1:8080/v1/chat/completions",
     "llama_server": {

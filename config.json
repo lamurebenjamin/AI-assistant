@@ -1,4 +1,5 @@
 {
+    "theme": "light",
     "hotkeys_enabled": true,
     "api_url": "http://127.0.0.1:8080/v1/chat/completions",
     "llama_server": {
@@ -61,8 +62,8 @@
     "voice_input": {
         "enabled": true,
         "hotkey": "ctrl+alt+1",
-        "input_device": 2,
-        "input_device_name": "Headset (Jabra Evolve 65 TE)",
+        "input_device": null,
+        "input_device_name": "",
         "sample_rate": 16000,
         "minimum_duration": 0.5,
         "minimum_rms_level": 0.005,

@@ -38,9 +38,11 @@ class LlamaThread(QThread):
         vocabulary_prompt: str = "",
         skill_manager=None,
         enable_tools: bool = True,
+        forced_tool: Optional[str] = None,
     ):
         super().__init__()
         self.api_url = api_url
+        self.forced_tool = (forced_tool or "").strip() or None
         self.prompt = prompt
         self.system_prompt = system_prompt
         self.prefix = prefix
@@ -243,25 +245,38 @@ class LlamaThread(QThread):
     _requires_tool_call = staticmethod(requires_tool_call)
 
     def _run_agent(self, messages: list) -> str:
-        must_use_tool = self._requires_tool_call(messages)
+        must_use_tool = self._requires_tool_call(messages) or bool(self.forced_tool)
         tool_was_called = False
 
         if must_use_tool:
             messages = list(messages)
             messages[0] = dict(messages[0])
+            forced_instruction = ""
+            if self.forced_tool:
+                forced_instruction = (
+                    f"\n\nRÈGLE D'EXÉCUTION OBLIGATOIRE : Tu dois impérativement appeler l'outil `{self.forced_tool}` "
+                    f"pour répondre à l'action demandée par l'utilisateur. Déduis les paramètres requis et "
+                    f"appelle immédiatement cet outil."
+                )
             messages[0]["content"] = (
                 str(messages[0].get("content") or "")
                 + "\n\nRÈGLE D'EXÉCUTION PRIORITAIRE : la demande exige une action réelle. "
                   "Tu dois appeler un outil disponible. Il est interdit de répondre que tu ne "
                   "peux pas créer, enregistrer ou modifier le fichier, et il est interdit de "
                   "remplacer l'action par des instructions manuelles."
+                + forced_instruction
             )
 
         for _round in range(self.MAX_TOOL_ROUNDS):
             if self._stop_requested:
                 return ""
 
-            choice = "required" if must_use_tool and not tool_was_called else "auto"
+            if not tool_was_called and self.forced_tool:
+                choice = {"type": "function", "function": {"name": self.forced_tool}}
+            elif must_use_tool and not tool_was_called:
+                choice = "required"
+            else:
+                choice = "auto"
             text, tool_calls = self._stream_request(
                 messages,
                 include_tools=bool(self.tool_definitions),

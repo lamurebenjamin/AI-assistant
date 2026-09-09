@@ -10,9 +10,12 @@ from pathlib import Path
 from typing import List, Optional, Set, Tuple
 
 try:
-    import fitz  # PyMuPDF
+    import pymupdf as fitz
 except ImportError:
-    fitz = None
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        fitz = None
 
 
 def normalize_page_selection(selection, page_count: int) -> List[int]:

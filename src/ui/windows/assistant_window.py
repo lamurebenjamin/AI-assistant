@@ -75,6 +75,7 @@ from src.ui.design_tokens import (
     RADIUS_XL,
     SIZE_LG,
     SIZE_SM,
+    is_dark_theme,
 )
 from src.ui.icons import ICONS_DARK, get_logo_pixmap
 from src.ui.stylesheet import build_acrylic_window_qss
@@ -267,7 +268,7 @@ class AssistantWindow(QWidget):
         self.setMaximumSize(1400, 900)
 
         self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(1, 1, 1, 1)
+        self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
 
         self.panel = QFrame(self)
@@ -306,7 +307,7 @@ class AssistantWindow(QWidget):
         self.title_label.setTextFormat(Qt.PlainText)
         header_layout.addWidget(self.title_label, 1)
 
-        self.speak_button = AnimatedHeaderButton(ICONS_DARK["speak"], "Lire la réponse à haute voix", header)
+        self.speak_button = AnimatedHeaderButton(ICONS_DARK["speak"], "Lire la réponse à haute voix", header, is_audio=True)
         self.speak_button.setIconSize(QSize(18, 18))
         self.speak_button.clicked.connect(self.toggle_speech)
         header_layout.addWidget(self.speak_button, 0, Qt.AlignVCenter)
@@ -321,10 +322,16 @@ class AssistantWindow(QWidget):
         self.close_button.clicked.connect(self.close_response_window)
         header_layout.addWidget(self.close_button, 0, Qt.AlignVCenter)
         panel_layout.addWidget(header)
-        self.separator_container = QFrame(self.panel)
+        self.separator_wrapper = QWidget(self.panel)
+        sep_layout = QHBoxLayout(self.separator_wrapper)
+        sep_layout.setContentsMargins(12, 0, 12, 0)
+        sep_layout.setSpacing(0)
+        self.separator_container = QFrame(self.separator_wrapper)
         self.separator_container.setFixedHeight(1)
-        self.separator_container.setStyleSheet("background: rgba(0,0,0,35); border: none;")
-        panel_layout.addWidget(self.separator_container)
+        sep_bg = "rgba(255,255,255,25)" if is_dark_theme() else "rgba(0,0,0,35)"
+        self.separator_container.setStyleSheet(f"background: {sep_bg}; border: none;")
+        sep_layout.addWidget(self.separator_container)
+        panel_layout.addWidget(self.separator_wrapper)
 
         self.scroll_area = QScrollArea(self.panel)
         self.scroll_area.setWidgetResizable(True)
@@ -658,7 +665,7 @@ class AssistantWindow(QWidget):
         self.document_dialog.show()
         QTimer.singleShot(0, self.document_dialog.focus_message_input)
 
-    def start_document_analysis(self, paths, question, audio_data=None):
+    def start_document_analysis(self, paths, question, audio_data=None, forced_tool=None):
         """Analyse une nouvelle question en conservant l'historique de la conversation."""
         if self.document_thread is not None and self.document_thread.isRunning():
             return
@@ -687,6 +694,7 @@ class AssistantWindow(QWidget):
             audio_data=audio_data,
             history=history,
             skill_manager=self.skill_manager,
+            forced_tool=forced_tool,
         )
         self.document_thread.new_text.connect(self.update_document_text)
         self.document_thread.tool_event.connect(self.update_document_tool_event)
@@ -709,16 +717,8 @@ class AssistantWindow(QWidget):
         return f"\n\n{title}\n```json\n{detail}\n```\n\n"
 
     def update_document_tool_event(self, phase, name, detail):
-        if self.document_dialog is None:
-            return
-        if phase == "appel":
-            self.document_dialog.status.setText(f"Utilisation de l’outil : {name}")
-            self.document_dialog.status.show()
-            self.document_dialog._update_height()
-            return
-        self.document_dialog.status.clear()
-        self.document_dialog.status.hide()
-        self.document_dialog._update_height()
+        if self.document_dialog is not None:
+            self.document_dialog.record_tool_event(phase, name, detail)
         if phase == "résultat":
             for path in self._created_file_paths(detail):
                 self.update_document_text(self._file_link_markdown(path))
@@ -1442,7 +1442,7 @@ class AssistantWindow(QWidget):
 
     def apply_native_window_effects(self):
         hwnd = int(self.winId())
-        apply_acrylic_blur(hwnd, 0xB8F5F5F5)
+        apply_acrylic_blur(hwnd)
         apply_rounded_corners(hwnd)
         self.update_rounded_mask()
         QTimer.singleShot(0, self.update_rounded_mask)

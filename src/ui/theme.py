@@ -1,23 +1,10 @@
-"""Gestion du thème visuel : acrylique Windows, coins arrondis, palette claire."""
+"""Gestion du thème visuel : acrylique Windows, coins arrondis, palette Antigravity."""
 
 import ctypes
 import sys
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QEvent, QObject, Qt
 from PyQt5.QtGui import QColor, QPalette
-
-from src.ui.design_tokens import (
-    COLOR_BG_PAGE,
-    COLOR_BG_SUBTLE,
-    COLOR_BG_SURFACE,
-    COLOR_BORDER,
-    COLOR_BORDER_SUBTLE,
-    COLOR_PRIMARY_LIGHT,
-    COLOR_TEXT_MUTED,
-    COLOR_TEXT_PRIMARY,
-    FONT_TEXT,
-    RADIUS_SM,
-    SIZE_MD,
-)
+from PyQt5.QtWidgets import QToolTip
 
 
 class AccentPolicy(ctypes.Structure):
@@ -37,15 +24,19 @@ class WindowCompositionAttributeData(ctypes.Structure):
     ]
 
 
-def apply_acrylic_blur(hwnd: int, color: int = 0xA0F8F8F8) -> bool:
-    """Applique un fond acrylique blanc translucide sous Windows 10/11."""
+def apply_acrylic_blur(hwnd: int, color: int = None) -> bool:
+    """Applique un fond acrylique translucide sous Windows 10/11 adapté au thème actif."""
     if sys.platform != "win32":
         return False
+
+    if color is None:
+        from src.ui.design_tokens import is_dark_theme
+        color = 0xEB1E1E1E if is_dark_theme() else 0xA0F8F8F8
 
     try:
         accent = AccentPolicy()
         accent.AccentState = 4  # ACCENT_ENABLE_ACRYLICBLURBEHIND
-        accent.GradientColor = color  # Format Windows : AABBGGRR (0x40 = ~25% d'opacité)
+        accent.GradientColor = color  # Format Windows : AABBGGRR
         accent.AccentFlags = 2
         accent.AnimationId = 0
 
@@ -62,13 +53,13 @@ def apply_acrylic_blur(hwnd: int, color: int = 0xA0F8F8F8) -> bool:
         return False
 
 
-def apply_rounded_corners(hwnd: int) -> None:
-    """Active les coins arrondis natifs sous Windows 11."""
+def apply_rounded_corners(hwnd: int, round_type: int = 2) -> None:
+    """Active les coins arrondis natifs sous Windows 11 (DWMWCP_ROUND = 2)."""
     if sys.platform != "win32":
         return
 
     try:
-        preference = ctypes.c_int(2)  # DWMWCP_ROUND
+        preference = ctypes.c_int(round_type)  # 2 = DWMWCP_ROUND
         ctypes.windll.dwmapi.DwmSetWindowAttribute(
             int(hwnd), 33, ctypes.byref(preference), ctypes.sizeof(preference)
         )
@@ -76,20 +67,8 @@ def apply_rounded_corners(hwnd: int) -> None:
         pass
 
 
-from PyQt5.QtCore import QEvent, QObject, Qt
-from PyQt5.QtGui import QColor, QPalette
-from PyQt5.QtWidgets import QToolTip
-
-
 class CleanToolTipFilter(QObject):
-    """Évite le bug de rectangle noir sous Windows.
-
-    Par défaut, Qt passe le widget survolé à QTipLabel, qui copie sa palette.
-    Sur les fenêtres translucides ou avec fond transparent, cette palette
-    contient QColor(0,0,0,0), ce qui provoque un rendu noir opaque sous Windows.
-    En passant widget=None à QToolTip.showText(), le tooltip utilise la palette
-    globale blanche opaque de l'application sans aucun artefact.
-    """
+    """Évite le bug de rectangle noir sous Windows sur fenêtres translucides."""
 
     def eventFilter(self, watched, event):
         if event.type() == QEvent.ToolTip:
@@ -100,13 +79,31 @@ class CleanToolTipFilter(QObject):
         return super().eventFilter(watched, event)
 
 
-def apply_light_popup_theme(app) -> None:
-    """Force les menus Qt, y compris Copier/Coller, en thème clair.
+def apply_app_theme(app, theme_name: str = None) -> None:
+    """Applique le thème (palette Qt, menus, tooltips, icônes) à l'application entière."""
+    from src.ui.design_tokens import (
+        COLOR_BG_PAGE,
+        COLOR_BG_SUBTLE,
+        COLOR_BG_SURFACE,
+        COLOR_BORDER,
+        COLOR_BORDER_SUBTLE,
+        COLOR_PRIMARY_LIGHT,
+        COLOR_TEXT_MUTED,
+        COLOR_TEXT_PRIMARY,
+        FONT_TEXT,
+        RADIUS_SM,
+        SIZE_MD,
+        is_dark_theme,
+        set_active_theme,
+    )
+    from src.ui.icons import update_icons_for_theme
 
-    Les menus contextuels standards de QTextEdit/QTextBrowser sont créés par Qt
-    au moment du clic droit. Un style local sur la fenêtre ne suffit donc pas :
-    la palette et le QSS doivent être appliqués au niveau de QApplication.
-    """
+    if theme_name:
+        set_active_theme(theme_name)
+
+    is_dark = is_dark_theme()
+    update_icons_for_theme(is_dark)
+
     palette = app.palette()
     palette.setColor(QPalette.Window, QColor(COLOR_BG_PAGE))
     palette.setColor(QPalette.WindowText, QColor(COLOR_TEXT_PRIMARY))
@@ -117,14 +114,19 @@ def apply_light_popup_theme(app) -> None:
     palette.setColor(QPalette.ButtonText, QColor(COLOR_TEXT_PRIMARY))
     palette.setColor(QPalette.Highlight, QColor(COLOR_PRIMARY_LIGHT))
     palette.setColor(QPalette.HighlightedText, QColor(COLOR_TEXT_PRIMARY))
-    palette.setColor(QPalette.ToolTipBase, QColor("#FFFFFF"))
+    tooltip_bg = "#1F1F1F" if is_dark else "#FFFFFF"
+    palette.setColor(QPalette.ToolTipBase, QColor(tooltip_bg))
     palette.setColor(QPalette.ToolTipText, QColor(COLOR_TEXT_PRIMARY))
     palette.setColor(QPalette.Disabled, QPalette.Text, QColor(COLOR_TEXT_MUTED))
     palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor(COLOR_TEXT_MUTED))
     app.setPalette(palette)
+
+    menu_selected_bg = "rgba(56, 139, 253, 35)" if is_dark else COLOR_PRIMARY_LIGHT
+    tooltip_bg_qss = "#1F1F1F" if is_dark else "#FFFFFF"
+    tooltip_border = "#3C3C3C" if is_dark else COLOR_BORDER
+
     app.setStyleSheet(
-        (app.styleSheet() or "")
-        + f"""
+        f"""
         QMenu {{
             background-color: {COLOR_BG_SURFACE};
             color: {COLOR_TEXT_PRIMARY};
@@ -132,6 +134,7 @@ def apply_light_popup_theme(app) -> None:
             padding: 5px;
             font-family: {FONT_TEXT};
             font-size: {SIZE_MD};
+            border-radius: {RADIUS_SM};
         }}
         QMenu::item {{
             background-color: transparent;
@@ -142,7 +145,7 @@ def apply_light_popup_theme(app) -> None:
             border-radius: {RADIUS_SM};
         }}
         QMenu::item:selected {{
-            background-color: {COLOR_PRIMARY_LIGHT};
+            background-color: {menu_selected_bg};
             color: {COLOR_TEXT_PRIMARY};
         }}
         QMenu::item:disabled {{
@@ -156,10 +159,10 @@ def apply_light_popup_theme(app) -> None:
         }}
         QMenu::icon {{ padding-left: 4px; }}
         QToolTip {{
-            background-color: #FFFFFF;
+            background-color: {tooltip_bg_qss};
             color: {COLOR_TEXT_PRIMARY};
-            border: 1px solid {COLOR_BORDER};
-            border-radius: 0px;
+            border: 1px solid {tooltip_border};
+            border-radius: {RADIUS_SM};
             padding: 5px 8px;
             font-family: {FONT_TEXT};
             font-size: {SIZE_MD};
@@ -169,3 +172,8 @@ def apply_light_popup_theme(app) -> None:
     if not hasattr(app, "_clean_tooltip_filter"):
         app._clean_tooltip_filter = CleanToolTipFilter(app)
         app.installEventFilter(app._clean_tooltip_filter)
+
+
+def apply_light_popup_theme(app) -> None:
+    """Compatibilité avec l'ancien nom de fonction : applique le thème actif."""
+    apply_app_theme(app)

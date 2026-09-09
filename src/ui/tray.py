@@ -16,7 +16,7 @@ from src.ui.design_tokens import (
     RADIUS_SM,
     SIZE_LG,
 )
-from src.ui.icons import get_logo_pixmap
+from src.ui.icons import get_app_icon, get_logo_pixmap
 
 
 def create_tray_icon(app, assistant):
@@ -27,7 +27,8 @@ def create_tray_icon(app, assistant):
     """
     tray_icon = QSystemTrayIcon(app)
 
-    icon = QIcon(get_logo_pixmap(32, APP_DIR))
+    # Icône multi-résolution (inclut 40x40 pour showMessage, 16/24/32 pour le tray, etc.)
+    icon = get_app_icon(APP_DIR)
 
     app.setWindowIcon(icon)
     tray_icon.setIcon(icon)

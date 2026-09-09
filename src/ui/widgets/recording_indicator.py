@@ -174,7 +174,7 @@ class RecordingIndicator(QWidget):
     def apply_native_effects(self) -> None:
         try:
             hwnd = int(self.winId())
-            apply_acrylic_blur(hwnd, 0xB8F5F5F5)
+            apply_acrylic_blur(hwnd)
             apply_rounded_corners(hwnd)
         except (AttributeError, OSError, TypeError, ValueError):
             LOGGER.debug(
