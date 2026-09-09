@@ -1,20 +1,23 @@
-﻿# Moteur GUI & Raccourcis
+# Interface Graphique (GUI) & Raccourcis Système
 PyQt5
 keyboard
 pyperclip
 
-# Traitement Audio & Maths
+# Traitement Audio & Calcul Numérique
 sounddevice
 numpy
 scipy
 
-# Synthèse Vocale (TTS) & ONNX
+# Synthèse Vocale (TTS) & Accélération ONNX/CUDA
 kokoro-onnx
 onnxruntime-gpu
 
-# Réseau & Images
+# Réseau, Parsing & Traitement d'Images
 Pillow
 requests
+
+# Analyse Documentaire (PDF, Images)
+PyMuPDF
 
 # Compétences Bureautiques (Skills)
 python-docx

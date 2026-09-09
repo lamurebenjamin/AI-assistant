@@ -1,11 +1,11 @@
-"""Point d'entrée principal de l'Assistant IA (compatible avec les raccourcis existants)."""
+"""Point d'entrée de compatibilité ascendante de l'Assistant IA.
 
-import ctypes
-import logging
-import sys
+Ce module délègue l'exécution à `src.app.application.run()` tout en réexportant
+les classes et fonctions historiques pour assurer une compatibilité totale avec
+les raccourcis Windows existants (Assistant IA.lnk) et les scripts dépendants.
+"""
 
-from PyQt5.QtWidgets import QApplication, QSystemTrayIcon
-
+from src.app.application import run
 from src.app.hotkey_managers import (
     MenuHotkeyManager,
     NumericHotkeyManager,
@@ -43,55 +43,8 @@ LLAMA_SERVER_MANAGER = get_server_manager()
 
 
 def main() -> int:
-    """Initialise l'application et retourne son code de sortie."""
-    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
-
-    if sys.platform == "win32":
-        try:
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                "Assistant.IA"
-            )
-        except (AttributeError, OSError):
-            pass
-
-    app = QApplication(sys.argv)
-    apply_light_popup_theme(app)
-    app.setApplicationName("Assistant IA")
-    app.setApplicationDisplayName("Assistant IA")
-    app.setQuitOnLastWindowClosed(False)
-
-    initialize_icons()
-    assistant = AssistantWindow()
-    app.aboutToQuit.connect(LLAMA_SERVER_MANAGER.stop)
-
-    if QSystemTrayIcon.isSystemTrayAvailable():
-        # Conserver une référence empêche Python de détruire l'icône.
-        app.tray_icon = create_tray_icon(app, assistant)
-        assistant.start_server_online_notification(app.tray_icon)
-    else:
-        LOGGER.warning("Zone de notification Windows indisponible.")
-
-    # Les trois familles de raccourcis sont pilotées depuis l'icône système.
-    app.menu_hotkey_manager = MenuHotkeyManager(assistant)
-
-    # Ctrl+0 à Ctrl+9 : suppression automatique du zoom Adobe Reader/Acrobat
-    # lorsque ces applications sont au premier plan, sinon comportement normal
-    # (les raccourcis Ctrl+1 à Ctrl+9 de l'assistant restent toujours actifs).
-    app.numeric_hotkey_manager = NumericHotkeyManager(assistant, app)
-    app.voice_hotkey_manager = VoiceHotkeyManager(assistant)
-    assistant.set_hotkeys_enabled(
-        bool(assistant.config.get("hotkeys_enabled", True)), persist=False
-    )
-    app.aboutToQuit.connect(app.menu_hotkey_manager.stop)
-    app.aboutToQuit.connect(app.voice_hotkey_manager.stop)
-    app.aboutToQuit.connect(app.numeric_hotkey_manager.stop)
-
-    LOGGER.info("Assistant prêt.")
-    LOGGER.info(
-        "Sélectionnez du texte et appuyez sur Ctrl+. (menu) ou Ctrl+1 à Ctrl+9 (direct)."
-    )
-
-    return app.exec_()
+    """Exécute l'application via le gestionnaire de cycle de vie."""
+    return run()
 
 
 if __name__ == "__main__":
