@@ -579,16 +579,16 @@ class AssistantWindow(QWidget):
                     pass
             time.sleep(0.12)
 
-            # Plusieurs tentatives sont utiles avec les PDF volumineux ou les
-            # lecteurs exécutés en mode protégé, dont le presse-papiers est lent.
-            for shortcut, timeout in (('ctrl+c', 1.8), ('ctrl+c', 1.8), ('ctrl+insert', 1.8)):
+            # Plusieurs tentatives avec délais réduits pour éviter de bloquer l'interface
+            # lorsque rien n'est sélectionné.
+            for shortcut, timeout in (('ctrl+c', 0.25), ('ctrl+c', 0.35), ('ctrl+insert', 0.35)):
                 pyperclip.copy(marker)
-                time.sleep(0.06)
+                time.sleep(0.04)
                 keyboard.send(shortcut)
                 copied = read_new_clipboard(timeout)
                 if copied:
                     return copied
-                time.sleep(0.10)
+                time.sleep(0.06)
             return ""
         finally:
             try:
@@ -815,6 +815,9 @@ class AssistantWindow(QWidget):
                 # L'historique est envoyé à la prochaine question afin de permettre les suivis.
                 self.document_history.append({"role": "user", "content": self.document_dialog.turns[-1].get("question", "")})
                 self.document_history.append({"role": "assistant", "content": answer.strip()})
+                # Limiter l'historique aux 10 derniers échanges (20 messages) pour éviter la saturation du contexte.
+                if len(self.document_history) > 20:
+                    self.document_history = self.document_history[-20:]
             self.document_dialog.finish_response()
             if self.document_documents:
                 self.document_dialog.show_source_captures(answer, self.document_documents)

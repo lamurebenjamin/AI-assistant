@@ -97,6 +97,10 @@ class DocumentDialog(QDialog):
         self.stream_render_timer.setSingleShot(True)
         self.stream_render_timer.setInterval(45)
         self.stream_render_timer.timeout.connect(self._flush_stream_render)
+        self._temp_files = set()
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self.cleanup_temp_files)
         self._build_ui()
 
     def _build_ui(self):
@@ -407,6 +411,7 @@ class DocumentDialog(QDialog):
                                 f"assistant_turn_attachment_{os.getpid()}_{time.monotonic_ns()}_{index}.png",
                             )
                             pix.save(preview_path)
+                            self._temp_files.add(preview_path)
                         finally:
                             doc.close()
                     except Exception:
@@ -439,6 +444,7 @@ class DocumentDialog(QDialog):
             painter.drawPixmap(0, 0, shown)
             painter.end()
             rounded.save(rendered_path, "PNG")
+            self._temp_files.add(rendered_path)
             uri = Path(rendered_path).as_uri()
 
             caption = (
@@ -639,6 +645,7 @@ class DocumentDialog(QDialog):
                 pix=page.get_pixmap(matrix=fitz.Matrix(3.0,3.0),clip=clip,alpha=False,annots=True)
                 image_path=os.path.join(tempfile.gettempdir(),f"assistant_source_{os.getpid()}_{capture_id}.png")
                 pix.save(image_path); doc.close()
+                self._temp_files.add(image_path)
                 source_pixmap=QPixmap(image_path)
                 max_w=max(120,self.width()-82)
                 display_w=min(source_pixmap.width(), max_w)
@@ -1059,9 +1066,23 @@ class DocumentDialog(QDialog):
         documents, attachments_html = self._take_current_attachments()
         self.begin_response("Question audio", attachments_html)
         self.ask_requested.emit(documents, "", data)
-    def _audio_error(self,message):
-        self.is_recording=False; self.audio_thread=None; self._set_inline_recording_visual(False); self.status.setText(message)
+    def _audio_error(self, message):
+        self.is_recording = False
+        self.audio_thread = None
+        self._set_inline_recording_visual(False)
+        self.status.setText(message)
 
-# ==========================================
-# FENÊTRE FLOTTANTE AVEC BLUR
-# ==========================================
+    def cleanup_temp_files(self):
+        """Supprime les fichiers temporaires créés pour les aperçus et les captures de sources."""
+        for path in list(self._temp_files):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
+        self._temp_files.clear()
+
+    def closeEvent(self, event):
+        self.cleanup_temp_files()
+        super().closeEvent(event)
+
