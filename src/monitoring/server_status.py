@@ -3,13 +3,13 @@
 
 import re
 import requests
-from PyQt5.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 from src.config.schema import STATUS_TIMEOUT
 
 
 class ServerStatusThread(QThread):
-    status_checked = pyqtSignal(bool, str, str)
+    status_checked = Signal(bool, str, str)
 
     def __init__(self, api_url: str, parent=None):
         super().__init__(parent)

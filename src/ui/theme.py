@@ -2,9 +2,9 @@
 
 import ctypes
 import sys
-from PyQt5.QtCore import QEvent, QObject, Qt
-from PyQt5.QtGui import QColor, QPalette
-from PyQt5.QtWidgets import QToolTip
+from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtGui import QColor, QPalette
+from PySide6.QtWidgets import QToolTip
 
 
 class AccentPolicy(ctypes.Structure):
@@ -25,13 +25,13 @@ class WindowCompositionAttributeData(ctypes.Structure):
 
 
 def apply_acrylic_blur(hwnd: int, color: int = None) -> bool:
-    """Applique un fond acrylique translucide sous Windows 10/11 adapté au thème actif."""
+    """Applique un acrylique Windows réellement translucide sous Windows 10/11."""
     if sys.platform != "win32":
         return False
 
     if color is None:
-        from src.ui.design_tokens import is_dark_theme
-        color = 0xEB1E1E1E if is_dark_theme() else 0xA0F8F8F8
+        from src.ui.design_tokens import ACRYLIC_NATIVE_DARK, ACRYLIC_NATIVE_LIGHT, is_dark_theme
+        color = ACRYLIC_NATIVE_DARK if is_dark_theme() else ACRYLIC_NATIVE_LIGHT
 
     try:
         accent = AccentPolicy()
@@ -81,97 +81,53 @@ class CleanToolTipFilter(QObject):
 
 def apply_app_theme(app, theme_name: str = None) -> None:
     """Applique le thème (palette Qt, menus, tooltips, icônes) à l'application entière."""
-    from src.ui.design_tokens import (
-        COLOR_BG_PAGE,
-        COLOR_BG_SUBTLE,
-        COLOR_BG_SURFACE,
-        COLOR_BORDER,
-        COLOR_BORDER_SUBTLE,
-        COLOR_PRIMARY_LIGHT,
-        COLOR_TEXT_MUTED,
-        COLOR_TEXT_PRIMARY,
-        FONT_TEXT,
-        RADIUS_SM,
-        SIZE_MD,
-        is_dark_theme,
-        set_active_theme,
-    )
+    import src.ui.design_tokens as t
     from src.ui.icons import update_icons_for_theme
+    from src.ui.stylesheet import qss_menu, qss_tooltip
+
+    if getattr(app, "_theme_refresh_running", False) and not theme_name:
+        return
 
     if theme_name:
-        set_active_theme(theme_name)
+        t.set_active_theme(theme_name)
 
-    is_dark = is_dark_theme()
+    is_dark = t.is_dark_theme()
     update_icons_for_theme(is_dark)
 
     palette = app.palette()
-    palette.setColor(QPalette.Window, QColor(COLOR_BG_PAGE))
-    palette.setColor(QPalette.WindowText, QColor(COLOR_TEXT_PRIMARY))
-    palette.setColor(QPalette.Base, QColor(COLOR_BG_SURFACE))
-    palette.setColor(QPalette.AlternateBase, QColor(COLOR_BG_SUBTLE))
-    palette.setColor(QPalette.Text, QColor(COLOR_TEXT_PRIMARY))
-    palette.setColor(QPalette.Button, QColor(COLOR_BG_SURFACE))
-    palette.setColor(QPalette.ButtonText, QColor(COLOR_TEXT_PRIMARY))
-    palette.setColor(QPalette.Highlight, QColor(COLOR_PRIMARY_LIGHT))
-    palette.setColor(QPalette.HighlightedText, QColor(COLOR_TEXT_PRIMARY))
-    tooltip_bg = "#1F1F1F" if is_dark else "#FFFFFF"
-    palette.setColor(QPalette.ToolTipBase, QColor(tooltip_bg))
-    palette.setColor(QPalette.ToolTipText, QColor(COLOR_TEXT_PRIMARY))
-    palette.setColor(QPalette.Disabled, QPalette.Text, QColor(COLOR_TEXT_MUTED))
-    palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor(COLOR_TEXT_MUTED))
+    palette.setColor(QPalette.Window, QColor(t.COLOR_BG_PAGE))
+    palette.setColor(QPalette.WindowText, QColor(t.COLOR_TEXT_PRIMARY))
+    palette.setColor(QPalette.Base, QColor(t.COLOR_BG_SURFACE))
+    palette.setColor(QPalette.AlternateBase, QColor(t.COLOR_BG_SUBTLE))
+    palette.setColor(QPalette.Text, QColor(t.COLOR_TEXT_PRIMARY))
+    palette.setColor(QPalette.Button, QColor(t.COLOR_BG_SURFACE))
+    palette.setColor(QPalette.ButtonText, QColor(t.COLOR_TEXT_PRIMARY))
+    palette.setColor(QPalette.Highlight, QColor(t.COLOR_PRIMARY_LIGHT))
+    palette.setColor(QPalette.HighlightedText, QColor(t.COLOR_TEXT_PRIMARY))
+    palette.setColor(QPalette.ToolTipBase, QColor(t.COLOR_BG_SURFACE))
+    palette.setColor(QPalette.ToolTipText, QColor(t.COLOR_TEXT_PRIMARY))
+    palette.setColor(QPalette.Disabled, QPalette.Text, QColor(t.COLOR_TEXT_MUTED))
+    palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor(t.COLOR_TEXT_MUTED))
     app.setPalette(palette)
 
-    menu_selected_bg = "rgba(56, 139, 253, 35)" if is_dark else COLOR_PRIMARY_LIGHT
-    tooltip_bg_qss = "#1F1F1F" if is_dark else "#FFFFFF"
-    tooltip_border = "#3C3C3C" if is_dark else COLOR_BORDER
-
-    app.setStyleSheet(
-        f"""
-        QMenu {{
-            background-color: {COLOR_BG_SURFACE};
-            color: {COLOR_TEXT_PRIMARY};
-            border: 1px solid {COLOR_BORDER};
-            padding: 5px;
-            font-family: {FONT_TEXT};
-            font-size: {SIZE_MD};
-            border-radius: {RADIUS_SM};
-        }}
-        QMenu::item {{
-            background-color: transparent;
-            color: {COLOR_TEXT_PRIMARY};
-            min-height: 20px;
-            padding: 6px 28px 6px 10px;
-            margin: 1px;
-            border-radius: {RADIUS_SM};
-        }}
-        QMenu::item:selected {{
-            background-color: {menu_selected_bg};
-            color: {COLOR_TEXT_PRIMARY};
-        }}
-        QMenu::item:disabled {{
-            color: {COLOR_TEXT_MUTED};
-            background-color: transparent;
-        }}
-        QMenu::separator {{
-            height: 1px;
-            background-color: {COLOR_BORDER_SUBTLE};
-            margin: 5px 8px;
-        }}
-        QMenu::icon {{ padding-left: 4px; }}
-        QToolTip {{
-            background-color: {tooltip_bg_qss};
-            color: {COLOR_TEXT_PRIMARY};
-            border: 1px solid {tooltip_border};
-            border-radius: {RADIUS_SM};
-            padding: 5px 8px;
-            font-family: {FONT_TEXT};
-            font-size: {SIZE_MD};
-        }}
-    """
-    )
+    app.setStyleSheet(qss_menu() + qss_tooltip())
     if not hasattr(app, "_clean_tooltip_filter"):
         app._clean_tooltip_filter = CleanToolTipFilter(app)
         app.installEventFilter(app._clean_tooltip_filter)
+
+    app._theme_refresh_running = True
+    try:
+        refresh_open_windows(app)
+    finally:
+        app._theme_refresh_running = False
+
+
+def refresh_open_windows(app) -> None:
+    """Relit les tokens sur les fenêtres déjà ouvertes."""
+    for widget in app.topLevelWidgets():
+        refresh = getattr(widget, "refresh_theme", None)
+        if callable(refresh):
+            refresh()
 
 
 def apply_light_popup_theme(app) -> None:

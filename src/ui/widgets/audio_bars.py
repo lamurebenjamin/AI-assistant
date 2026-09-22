@@ -1,11 +1,11 @@
 """Indicateurs audio animés pour la captation microphone."""
 
 import numpy as np
-from PyQt5.QtCore import QRectF, Qt, QTimer
-from PyQt5.QtGui import QColor, QPainter
-from PyQt5.QtWidgets import QWidget
+from PySide6.QtCore import QRectF, Qt, QTimer
+from PySide6.QtGui import QColor, QPainter
+from PySide6.QtWidgets import QSizePolicy, QWidget
 
-from src.ui.design_tokens import COLOR_AUDIO_ACTIVE, COLOR_AUDIO_IDLE
+import src.ui.design_tokens as t
 
 
 class LiveAudioIndicator(QWidget):
@@ -13,7 +13,7 @@ class LiveAudioIndicator(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(106, 24)
+        self.setFixedSize(t.AUDIO_BARS_WIDTH, t.AUDIO_BARS_HEIGHT)
         self._level = 0.0
         self._display_level = 0.0
         self._phase = 0
@@ -55,7 +55,7 @@ class LiveAudioIndicator(QWidget):
         x0 = (self.width() - total_width) / 2.0
         center_y = self.height() / 2.0
         audible = self._display_level > 0.025
-        base_color = QColor(COLOR_AUDIO_ACTIVE if audible else COLOR_AUDIO_IDLE)
+        base_color = QColor(t.COLOR_AUDIO_ACTIVE if audible else t.COLOR_AUDIO_IDLE)
         for index in range(bar_count):
             distance = abs(index - (bar_count - 1) / 2.0)
             shape = max(0.25, 1.0 - distance / 8.0)
@@ -88,9 +88,9 @@ class ScrollingAudioBars(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(28)
+        self.setFixedHeight(t.AUDIO_BARS_HEIGHT)
         self.setMinimumWidth(40)
-        self.setSizePolicy(self.sizePolicy().Expanding, self.sizePolicy().Fixed)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._target_level = 0.0
         self._display_level = 0.0

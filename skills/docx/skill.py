@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-from .generator import create_docx
+from .generator import Nouveau_Document
 
 
 class DocxSkill:
     """Skill de création de documents Microsoft Word."""
 
     name = "docx"
+    display_name = "Word"
+    icon = "icon.svg"
 
     def get_tools(self):
         return [
             {
-                "name": "create_docx",
+                "name": "Nouveau_Document",
                 "description": (
                     "Crée un document Microsoft Word (.docx) dans le dossier output du projet "
                     "à partir d'un titre et de paragraphes. Utilise cet outil lorsque l'utilisateur "
@@ -37,6 +39,6 @@ class DocxSkill:
                     "required": ["filename", "title", "paragraphs"],
                     "additionalProperties": False,
                 },
-                "function": create_docx,
+                "function": Nouveau_Document,
             }
         ]

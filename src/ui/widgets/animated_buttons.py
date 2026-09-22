@@ -1,7 +1,7 @@
 import math
 import random
 import numpy as np
-from PyQt5.QtCore import (
+from PySide6.QtCore import (
     QEasingCurve,
     QEvent,
     QPointF,
@@ -10,26 +10,50 @@ from PyQt5.QtCore import (
     QSize,
     Qt,
     QTimer,
-    pyqtProperty,
+    Property,
 )
-from PyQt5.QtGui import QBrush, QColor, QIcon, QLinearGradient, QPainter, QPainterPath, QPen
-from PyQt5.QtWidgets import QPushButton, QToolTip
+from PySide6.QtGui import QBrush, QColor, QIcon, QLinearGradient, QPainter, QPainterPath, QPen
+from PySide6.QtWidgets import QPushButton, QToolTip
 
 import src.ui.design_tokens as t
+
+
+def _hover_overlay(pressed: bool) -> QColor:
+    alpha = 36 if pressed else 20
+    if t.is_dark_theme():
+        return QColor(255, 255, 255, alpha)
+    return QColor(0, 0, 0, alpha)
+
+
+def _draw_focus_ring(painter: QPainter, center: QPointF, diameter: float) -> None:
+    """Anneau de focus visible dans les deux thèmes, indépendant du survol."""
+    pen = QPen(QColor(t.COLOR_PRIMARY))
+    pen.setWidthF(1.6)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+    painter.drawEllipse(
+        QRectF(
+            center.x() - diameter / 2.0,
+            center.y() - diameter / 2.0,
+            diameter,
+            diameter,
+        )
+    )
 
 
 class AnimatedComposerButton(QPushButton):
     """Bouton carré avec cercle de survol et icône centrés exactement."""
 
     # Même couleur et même épaisseur de trait que l'icône de fermeture "x".
-    ICON_STROKE_WIDTH = 1.3
-    BUTTON_SIZE = QSize(28, 28)
-    HOVER_DIAMETER = 26.0
+    ICON_STROKE_WIDTH = t.ICON_STROKE_WIDTH
+    BUTTON_SIZE = QSize(t.BUTTON_SIZE_HEADER, t.BUTTON_SIZE_HEADER)
+    HOVER_DIAMETER = float(t.BUTTON_HOVER_DIAMETER)
     ICON_EXTENT = 6.5
 
     @property
     def icon_color(self) -> QColor:
-        # Toujours synchronisé avec la couleur du texte principal et de l'icône "x"
+        if not self.isEnabled():
+            return QColor(t.COLOR_TEXT_MUTED)
         return QColor(t.COLOR_TEXT_PRIMARY)
 
     def __init__(self, kind: str, parent=None):
@@ -42,6 +66,7 @@ class AnimatedComposerButton(QPushButton):
         self.setFixedSize(self.BUTTON_SIZE)
         self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.StrongFocus)
         self.setToolTip("")
         self.setIcon(QIcon())
         self.setStyleSheet("background:transparent;border:none;padding:0;margin:0;")
@@ -53,7 +78,7 @@ class AnimatedComposerButton(QPushButton):
         self._progress = max(0.0, min(1.0, float(value)))
         self.update()
 
-    animationProgress = pyqtProperty(
+    animationProgress = Property(
         float, fget=get_animation_progress, fset=set_animation_progress
     )
 
@@ -88,14 +113,14 @@ class AnimatedComposerButton(QPushButton):
         painter.setRenderHint(QPainter.Antialiasing, True)
         center = QPointF(self.width() / 2.0, self.height() / 2.0)
 
-        if self.underMouse() or self.isDown():
+        if self.isEnabled() and (self.underMouse() or self.isDown() or self.hasFocus()):
             d = self.HOVER_DIAMETER
             circle = QRectF(center.x() - d / 2.0, center.y() - d / 2.0, d, d)
             painter.setPen(Qt.NoPen)
-            hover_alpha = 36 if self.isDown() else 20
-            hover_color = QColor(255, 255, 255, hover_alpha) if t.is_dark_theme() else QColor(0, 0, 0, hover_alpha)
-            painter.setBrush(hover_color)
+            painter.setBrush(_hover_overlay(self.isDown()))
             painter.drawEllipse(circle)
+        if self.hasFocus() and self.isEnabled():
+            _draw_focus_ring(painter, center, self.HOVER_DIAMETER)
 
         color = self.icon_color
         pen = QPen(color)
@@ -170,8 +195,8 @@ class AnimatedComposerButton(QPushButton):
 class AnimatedHeaderButton(QPushButton):
     """Bouton d'en-tête circulaire moderne avec animation fluide de survol et remplissage audio."""
 
-    BUTTON_SIZE = QSize(28, 28)
-    HOVER_DIAMETER = 26.0
+    BUTTON_SIZE = QSize(t.BUTTON_SIZE_HEADER, t.BUTTON_SIZE_HEADER)
+    HOVER_DIAMETER = float(t.BUTTON_HOVER_DIAMETER)
 
     def __init__(
         self,
@@ -200,7 +225,8 @@ class AnimatedHeaderButton(QPushButton):
         self.setFixedSize(self.BUTTON_SIZE)
         self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
-        self.setFocusPolicy(Qt.NoFocus)
+        # Navigable au clavier : le focus dessine un anneau primaire dans paintEvent.
+        self.setFocusPolicy(Qt.StrongFocus)
         self._icon = icon if icon is not None else QIcon()
         if tooltip:
             self.setToolTip(tooltip)
@@ -236,7 +262,7 @@ class AnimatedHeaderButton(QPushButton):
         self._progress = max(0.0, min(1.0, float(value)))
         self.update()
 
-    animationProgress = pyqtProperty(
+    animationProgress = Property(
         float, fget=get_animation_progress, fset=set_animation_progress
     )
 
@@ -306,18 +332,22 @@ class AnimatedHeaderButton(QPushButton):
                     QPointF(circle.x() + fill_w, circle.bottom() - 3),
                 )
                 painter.restore()
-        elif self._progress > 0.001 or self.isDown():
-            # Rond de survol standard avec opacité progressive
-            alpha = 35 if self.isDown() else int(22 * self._progress)
+        elif self.isEnabled() and (self._progress > 0.001 or self.isDown() or self.hasFocus()):
+            overlay = _hover_overlay(self.isDown())
+            if not self.isDown() and not self.hasFocus():
+                overlay.setAlpha(max(1, int(overlay.alpha() * self._progress)))
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(0, 0, 0, alpha))
+            painter.setBrush(overlay)
             painter.drawEllipse(circle)
+
+        if self.hasFocus() and self.isEnabled():
+            _draw_focus_ring(painter, center, d)
 
         # Dessin de l'icône centrée
         if not self._icon.isNull():
             icon_sz = self.iconSize()
             if icon_sz.isEmpty():
-                icon_sz = QSize(18, 18)
+                icon_sz = QSize(t.ICON_SIZE_BUTTON, t.ICON_SIZE_BUTTON)
             rect = QRectF(
                 center.x() - icon_sz.width() / 2.0,
                 center.y() - icon_sz.height() / 2.0,
@@ -341,4 +371,3 @@ class AnimatedHeaderButton(QPushButton):
                     painter.restore()
 
         painter.end()
-

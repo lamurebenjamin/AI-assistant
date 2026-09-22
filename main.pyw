@@ -1,6 +1,6 @@
 """Point d'entrée principal moderne de l'Assistant IA."""
 
-# IMPORTANT — Windows : onnxruntime-gpu doit être initialisé AVANT PyQt5.
+# IMPORTANT — Windows : onnxruntime-gpu doit être initialisé AVANT PySide6.
 # Si Qt est chargé en premier, ses DLLs CUDA bloquent l'initialisation
 # d'onnxruntime (DLL load failed / error 1114). Ce bloc garantit l'ordre.
 try:

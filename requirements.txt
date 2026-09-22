@@ -1,32 +1,6 @@
-# Interface Graphique (GUI) & Raccourcis Système
-PyQt5
-keyboard
-pyperclip
-
-# Traitement Audio & Calcul Numérique
-sounddevice
+# Runtime commun : réseau, documents et calcul partagé
+requests
+Pillow
+PyMuPDF
 numpy
 scipy
-
-# Synthèse Vocale (TTS) & Accélération ONNX/CUDA
-# IMPORTANT : n'installez PAS 'onnxruntime' (CPU) en même temps que
-# 'onnxruntime-gpu' — ils partagent le même namespace et entrent en conflit
-# (DLL load failed). Utilisez uniquement l'un ou l'autre.
-# Version 1.19.2 : dernière version ne nécessitant pas cuDNN installé séparément.
-# (>= 1.20 requiert cuDNN 9.x système). Feed : https://aiinfra.pkgs.visualstudio.com/
-# PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
-kokoro-onnx
-onnxruntime-gpu==1.19.2
-
-# Réseau, Parsing & Traitement d'Images
-Pillow
-requests
-
-# Analyse Documentaire (PDF, Images)
-PyMuPDF
-
-# Compétences Bureautiques (Skills)
-python-docx
-openpyxl
-reportlab
-python-pptx

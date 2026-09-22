@@ -21,11 +21,10 @@ def format_inline_markdown(text: str) -> str:
         protected_links.append(link_html)
         return token
 
-    from src.ui.design_tokens import is_dark_theme
-    dark = is_dark_theme()
-    link_color = "#58A6FF" if dark else "#1565C0"
-    code_bg = "rgba(255, 255, 255, 18)" if dark else "rgba(0, 0, 0, 18)"
-    code_color = "#E0E0E0" if dark else "#111111"
+    from src.ui import design_tokens as tokens
+    link_color = tokens.COLOR_TEXT_LINK
+    code_bg = tokens.COLOR_CODE_BACKGROUND
+    code_color = tokens.COLOR_TEXT_CODE
 
     def source_link(match):
         filename = match.group(1).strip().lstrip("-•* ").strip()
@@ -80,7 +79,7 @@ def format_inline_markdown(text: str) -> str:
     return escaped
 
 
-def markdown_to_html(markdown_text: str) -> str:
+def markdown_to_html(markdown_text: str, font_size_offset: int = 0) -> str:
     """Convertit un texte au format Markdown en HTML compatible avec les widgets Qt."""
     lines = markdown_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     output = []
@@ -108,9 +107,9 @@ def markdown_to_html(markdown_text: str) -> str:
             close_list()
             if in_code:
                 code = html.escape("\n".join(code_lines), quote=False)
-                from src.ui.design_tokens import is_dark_theme
-                pre_bg = "#1E1E1E" if is_dark_theme() else "rgba(0,0,0,18)"
-                pre_border = "#3C3C3C" if is_dark_theme() else "rgba(0,0,0,30)"
+                from src.ui import design_tokens as tokens
+                pre_bg = tokens.COLOR_BG_PAGE
+                pre_border = tokens.COLOR_BORDER
                 output.append(
                     f'<pre style="margin:4px 0 8px 0; padding:8px; background-color:{pre_bg}; border:1px solid {pre_border}; border-radius:6px; white-space:pre-wrap; font-family:Consolas, monospace;">'
                     f"{code}</pre>"
@@ -131,7 +130,7 @@ def markdown_to_html(markdown_text: str) -> str:
         if heading:
             close_paragraph()
             close_list()
-            size = {1: 18, 2: 16, 3: 14}[len(heading.group(1))]
+            size = {1: 18, 2: 16, 3: 14}[len(heading.group(1))] + font_size_offset
             title = format_inline_markdown(heading.group(2))
             output.append(
                 f'<div style="font-size:{size}px; font-weight:600; margin:6px 0 4px 0;">{title}</div>'
@@ -145,7 +144,10 @@ def markdown_to_html(markdown_text: str) -> str:
             if list_type != wanted_type:
                 close_list()
                 list_type = wanted_type
-                output.append(f'<{list_type} style="margin:2px 0 8px 0; padding-left:22px;">')
+                output.append(
+                    f'<{list_type} style="margin:2px 0 8px 0; '
+                    '-qt-list-indent:0;">'
+                )
             item = bullet.group(1) if bullet else numbered.group(1)
             output.append(f'<li style="margin:2px 0;">{format_inline_markdown(item)}</li>')
             continue
@@ -154,8 +156,9 @@ def markdown_to_html(markdown_text: str) -> str:
 
     if in_code:
         code = html.escape("\n".join(code_lines), quote=False)
+        from src.ui import design_tokens as tokens
         output.append(
-            '<pre style="margin:4px 0 8px 0; padding:8px; background-color:rgba(0,0,0,18); border-radius:6px; white-space:pre-wrap; font-family:Consolas, monospace;">'
+            f'<pre style="margin:4px 0 8px 0; padding:8px; background-color:{tokens.COLOR_BG_PAGE}; border:1px solid {tokens.COLOR_BORDER}; border-radius:6px; white-space:pre-wrap; font-family:Consolas, monospace;">'
             f"{code}</pre>"
         )
     close_paragraph()

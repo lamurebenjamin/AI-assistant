@@ -8,7 +8,7 @@ from math import gcd
 from typing import Optional
 
 import numpy as np
-from PyQt5.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 from scipy.signal import resample_poly
 import sounddevice as sd
 
@@ -16,10 +16,18 @@ from src.config.schema import LOGGER
 
 
 class AudioRecorderThread(QThread):
-    level_changed = pyqtSignal(int)
-    recorded = pyqtSignal(bytes, float, float)
-    error = pyqtSignal(str)
-    maximum_reached = pyqtSignal()
+    """Capture un microphone et émet un WAV normalisé sans accès matériel de test.
+
+    Signaux : ``level_changed(int)`` pour le niveau RMS, ``recorded(bytes,
+    float, float)`` pour WAV/durée/RMS, ``error(str)`` en cas d'indisponibilité
+    et ``maximum_reached()`` lorsque la durée maximale est atteinte.
+    L'état terminal est atteint après fermeture du flux ; ``stop_recording()``
+    demande une fin avec la queue de relâchement configurée.
+    """
+    level_changed = Signal(int)
+    recorded = Signal(bytes, float, float)
+    error = Signal(str)
+    maximum_reached = Signal()
 
     def __init__(
         self,

@@ -4,7 +4,7 @@ import ctypes
 import logging
 import sys
 
-from PyQt5.QtWidgets import QApplication, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from src.app.hotkey_managers import (
     MenuHotkeyManager,
@@ -63,7 +63,7 @@ def run() -> int:
 
     LOGGER.info("Assistant prêt.")
     LOGGER.info(
-        "Sélectionnez du texte et appuyez sur Ctrl+. (menu) ou Ctrl+1 à Ctrl+9 (direct)."
+        "Sélectionnez du texte et appuyez sur Ctrl+. (menu) ou Ctrl+1 à Ctrl+9 (direct). Ctrl+0 masque/réaffiche Ctrl+9."
     )
 
-    return app.exec_()
+    return app.exec()

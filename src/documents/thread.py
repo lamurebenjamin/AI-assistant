@@ -6,19 +6,28 @@ import json
 from typing import List, Optional
 
 import requests
-from PyQt5.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 from src.documents.payload_builder import prepare_document_payload
+from src.llm.contracts import DocumentTurn, LlmMessage, LlmResponse
 from src.llm.client import LlamaThread
 from src.llm.response_parser import clean_chunk
 
 
 class DocumentAnalysisThread(QThread):
-    """Analyse directe de documents par llama.cpp, avec historique conversationnel."""
+    """Analyse directe de documents par llama.cpp, avec historique conversationnel.
 
-    new_text = pyqtSignal(str)
-    tool_event = pyqtSignal(str, str, str)
-    request_error = pyqtSignal(str, bool)
+    Signaux : ``new_text`` et ``thinking_text`` émettent des fragments,
+    ``tool_event`` décrit les appels d'outils et ``request_error`` expose le
+    message et l'indicateur d'incompatibilité serveur. ``stop()`` ferme la
+    réponse HTTP et l'agent enfant ; le thread est terminal au retour de
+    ``run()`` et conserve les pages dans ``source_pages``.
+    """
+
+    new_text = Signal(str)
+    thinking_text = Signal(str)
+    tool_event = Signal(str, str, str)
+    request_error = Signal(str, bool)
 
     def __init__(
         self,
@@ -28,7 +37,7 @@ class DocumentAnalysisThread(QThread):
         question: str,
         parent=None,
         audio_data: Optional[bytes] = None,
-        history: Optional[list] = None,
+        history: Optional[List[DocumentTurn]] = None,
         skill_manager=None,
         forced_tool: Optional[str] = None,
     ):
@@ -38,15 +47,18 @@ class DocumentAnalysisThread(QThread):
         self.paths = list(paths)
         self.question = question.strip()
         self.audio_data = audio_data
-        self.history = list(history or [])
+        self.history: List[DocumentTurn] = list(history or [])
         self.skill_manager = skill_manager
         self.forced_tool = forced_tool
         self._stop_requested = False
         self._agent: Optional[LlamaThread] = None
+        self._active_response = None
         self.source_pages: list = []
 
     def stop(self):
         self._stop_requested = True
+        if self._active_response is not None:
+            self._active_response.close()
         agent = self._agent
         if agent is not None:
             agent.stop()
@@ -58,8 +70,8 @@ class DocumentAnalysisThread(QThread):
             return ""
         parts = []
         for item in self.history[-8:]:
-            role = item.get("role", "") if isinstance(item, dict) else ""
-            text = item.get("content", "") if isinstance(item, dict) else ""
+            role = item.get("role", "")
+            text = item.get("content", "")
             if not text:
                 continue
             label = "Utilisateur" if role == "user" else "Assistant"
@@ -122,6 +134,7 @@ class DocumentAnalysisThread(QThread):
             timeout=(15, 180),
             headers={"Content-Type": "application/json"},
         )
+        self._active_response = response
         response.raise_for_status()
         data = response.json()
         choices = data.get("choices") or []
@@ -291,6 +304,7 @@ class DocumentAnalysisThread(QThread):
                     forced_tool=self.forced_tool,
                 )
                 agent.new_text.connect(self.new_text.emit)
+                agent.thinking_text.connect(self.thinking_text.emit)
                 agent.tool_event.connect(self.tool_event.emit)
                 self._agent = agent
                 try:
@@ -319,6 +333,7 @@ class DocumentAnalysisThread(QThread):
                 timeout=(15, 180),
                 headers=headers,
             ) as response:
+                self._active_response = response
                 response.raise_for_status()
                 for raw_line in response.iter_lines(chunk_size=64, decode_unicode=False):
                     if self._stop_requested:
@@ -340,6 +355,22 @@ class DocumentAnalysisThread(QThread):
                     choice = choices[0] if choices else {}
                     delta = choice.get("delta") or {}
                     message = choice.get("message") or {}
+                    reasoning = (
+                        delta.get("reasoning_content")
+                        or delta.get("reasoning")
+                        or delta.get("thinking")
+                        or message.get("reasoning_content")
+                        or message.get("reasoning")
+                        or choice.get("reasoning_content")
+                        or data.get("reasoning_content")
+                    )
+                    if isinstance(reasoning, list):
+                        reasoning = "".join(
+                            item.get("text", "") if isinstance(item, dict) else str(item)
+                            for item in reasoning
+                        )
+                    if reasoning:
+                        self.thinking_text.emit(str(reasoning))
                     content_value = (
                         delta.get("content")
                         or choice.get("text")

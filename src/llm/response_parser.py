@@ -15,7 +15,7 @@ CLEAN_TOKENS = (
 
 
 def clean_chunk(text: str) -> str:
-    """Supprime les balises spéciales et métadonnées de fin de tour des flux SSE."""
+    """Nettoie un fragment SSE ; accepte une chaîne vide et ne lève pas d'erreur."""
     if not text:
         return ""
     for token in CLEAN_TOKENS:
@@ -23,8 +23,15 @@ def clean_chunk(text: str) -> str:
     return text
 
 
+def clean_thinking_text(text: str) -> str:
+    """Supprime les en-têtes de raisonnement ajoutés par certains modèles."""
+    if not text:
+        return ""
+    return re.sub(r"(?im)^\s*thinking\s+process\s*:\s*", "", text)
+
+
 def split_thinking_and_answer(raw_text: str) -> Tuple[str, str]:
-    """Sépare les réflexions de raisonnement (<think>...</think>) de la réponse finale."""
+    """Retourne ``(raisonnement, réponse)`` après extraction des balises ``think``."""
     normalized = re.sub(r"</think>\s*<think>", "", raw_text, flags=re.IGNORECASE)
     thinking_parts = []
 
@@ -40,12 +47,14 @@ def split_thinking_and_answer(raw_text: str) -> Tuple[str, str]:
         thinking_parts.append(open_match.group(1))
         answer = answer[: open_match.start()]
     answer = re.sub(r"</?think>", "", answer, flags=re.IGNORECASE)
-    thinking = "\n".join(part.strip() for part in thinking_parts if part.strip())
+    thinking = clean_thinking_text(
+        "\n".join(part.strip() for part in thinking_parts if part.strip())
+    )
     return thinking.strip(), answer.strip()
 
 
 def parse_audio_response(raw_text: str) -> Tuple[str, str]:
-    """Extrait le transcript pour le titre et masque les balises dans la réponse."""
+    """Retourne ``(transcription, réponse)`` en tolérant les balises incomplètes."""
     transcript = ""
     transcript_match = re.search(
         r"<transcript>(.*?)</transcript>", raw_text, re.IGNORECASE | re.DOTALL

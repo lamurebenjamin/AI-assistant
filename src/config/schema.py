@@ -5,6 +5,68 @@ import copy
 import logging
 import os
 from pathlib import Path
+from typing import List, Optional, TypedDict, Union
+
+
+class ActionConfig(TypedDict):
+    name: str
+    system_prompt: str
+    prompt_prefix: str
+
+
+class LlamaServerConfig(TypedDict):
+    auto_start: bool
+    executable: str
+    model: str
+    arguments: List[Union[str, int, float]]
+
+
+class TextToSpeechConfig(TypedDict):
+    rate: int
+    speed: float
+    max_pause_ms: int
+    volume: int
+    automatic_reading: bool
+    model_path: str
+    voices_path: str
+    voice: str
+    language: str
+    output_device: Optional[int]
+    output_device_name: str
+
+
+class VoiceInputConfig(TypedDict):
+    enabled: bool
+    hotkey: str
+    input_device: Optional[int]
+    input_device_name: str
+    sample_rate: int
+    minimum_duration: float
+    minimum_rms_level: float
+    audio_format: str
+    maximum_duration: float
+    release_tail_ms: int
+    microphone_gain: float
+    language: str
+    vocabulary_prompt: str
+
+
+class Ctrl9Config(TypedDict):
+    width: int
+    max_height: int
+    font_size: int
+
+
+class AssistantConfig(TypedDict):
+    theme: str
+    hotkeys_enabled: bool
+    api_url: str
+    llm_max_tokens: int
+    llama_server: LlamaServerConfig
+    text_to_speech: TextToSpeechConfig
+    voice_input: VoiceInputConfig
+    actions: List[ActionConfig]
+    ctrl9: Ctrl9Config
 
 APP_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CONFIG_FILE = os.path.join(APP_DIR, "config.json")
@@ -17,6 +79,7 @@ DEFAULT_CONFIG = {
     "theme": "dark",
     "hotkeys_enabled": True,
     "api_url": "http://127.0.0.1:8080/v1/chat/completions",
+    "llm_max_tokens": 8192,
     "llama_server": {
         "auto_start": True,
         "executable": "llama-server.exe",
@@ -98,4 +161,9 @@ DEFAULT_CONFIG = {
             "prompt_prefix": "",
         },
     ],
+    "ctrl9": {
+        "width": 480,
+        "max_height": 620,
+        "font_size": 14,
+    },
 }

@@ -1,10 +1,19 @@
 """Bulles de dialogue (utilisateur / assistant) et navigateur de texte avec loupe intégrée."""
 
-from PyQt5.QtCore import QRectF, Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPixmap
-from PyQt5.QtWidgets import QFrame, QTextBrowser, QVBoxLayout
+import math
+from PySide6.QtCore import QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPixmap
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QSizePolicy,
+    QTextBrowser,
+    QVBoxLayout,
+)
+from shiboken6 import isValid as is_qt_object_valid
 
 import src.ui.design_tokens as t
+from src.ui.widgets.skill_tag import SkillTag
 
 
 
@@ -155,28 +164,49 @@ class SourceZoomTextBrowser(QTextBrowser):
 class ChatBubble(QFrame):
     """Bulle de conversation réelle, avec coins arrondis et largeur contrainte."""
 
-    link_clicked = pyqtSignal(object)
+    link_clicked = Signal(object)
 
-    def __init__(self, role: str, parent=None):
+    def __init__(self, role: str, parent=None, font_size_offset: int = 0):
         super().__init__(parent)
         self.role = role
-        self.setObjectName("UserBubble" if role == "user" else "AssistantBubble")
-        self.setSizePolicy(self.sizePolicy().Preferred, self.sizePolicy().Fixed)
+        self.font_size_offset = font_size_offset
+        self.setObjectName(
+            "UserBubble" if role == "user"
+            else "ErrorBubble" if role == "error"
+            else "AssistantBubble"
+        )
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.setMaximumWidth(10_000)
         if role == "user":
-            self.setStyleSheet(
-                f"QFrame#UserBubble {{ background:{t.COLOR_PRIMARY_LIGHT}; border:1px solid {t.COLOR_PRIMARY_BORDER}; "
-                f"border-radius:{t.RADIUS_XL}; }}"
-            )
             layout = QVBoxLayout(self)
-            layout.setContentsMargins(12, 10, 12, 10)
-        else:
-            self.setStyleSheet(
-                "QFrame#AssistantBubble { background: transparent; border: none; border-radius: 0; }"
+            layout.setContentsMargins(
+                t.CHAT_BUBBLE_PADDING_X,
+                t.CHAT_BUBBLE_PADDING_Y,
+                t.CHAT_BUBBLE_PADDING_X,
+                4,
             )
+        elif role == "error":
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(
+                t.CHAT_BUBBLE_PADDING_X,
+                t.CHAT_BUBBLE_PADDING_Y,
+                t.CHAT_BUBBLE_PADDING_X,
+                t.CHAT_BUBBLE_PADDING_Y,
+            )
+        else:
             layout = QVBoxLayout(self)
             layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(0)
+        self.skill_tag_row = SkillTag(
+            self,
+            font_size_offset=font_size_offset,
+            framed=False,
+            text_color=(
+                t.COLOR_USER_TEXT if role == "user" else t.COLOR_TEXT_PRIMARY
+            ),
+        )
+        self.skill_tag_icon = self.skill_tag_row.icon_label
+        self.skill_tag_title = self.skill_tag_row.title_label
         self.browser = SourceZoomTextBrowser(self)
         self.browser.setReadOnly(True)
         self.browser.setOpenLinks(False)
@@ -185,44 +215,137 @@ class ChatBubble(QFrame):
         self.browser.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.browser.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.browser.setSizePolicy(
-            self.browser.sizePolicy().Expanding,
-            self.browser.sizePolicy().Fixed,
+            QSizePolicy.Expanding,
+            QSizePolicy.Fixed,
         )
-        text_color = t.COLOR_USER_TEXT if role == "user" else t.COLOR_TEXT_PRIMARY
-        self.browser.setStyleSheet(
-            f"QTextBrowser {{ background:transparent; border:none; padding:0; "
-            f"color:{text_color}; font-family:{t.FONT_TEXT}; font-size:{t.SIZE_MD}; }}"
-        )
+        font = self.browser.font()
+        font.setFamily("-apple-system")
+        font.setStyleHint(QFont.SansSerif)
+        pixel_size = int(t.SIZE_MD.rstrip("px")) + font_size_offset
+        font.setPixelSize(pixel_size)
+        self.browser.setFont(font)
+        self.browser.document().setDefaultFont(font)
+        if role == "user":
+            self.browser.setAlignment(Qt.AlignLeft)
         self.browser.document().setDocumentMargin(0)
         self.browser.anchorClicked.connect(self.link_clicked.emit)
-        layout.addWidget(self.browser)
+        self.content_layout = QHBoxLayout()
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(0)
+        self.content_layout.addWidget(self.skill_tag_row, 0, Qt.AlignTop)
+        self.content_layout.addWidget(self.browser, 1)
+        layout.addLayout(self.content_layout)
+        self.timestamp_label = None
+        self.refresh_theme()
+
+    def refresh_theme(self) -> None:
+        if self.role == "user":
+            self.setStyleSheet(
+                f"QFrame#UserBubble {{ background:{t.COLOR_BG_SUBTLE}; border:none; "
+                f"border-radius:{t.RADIUS_XL}; }}"
+            )
+        elif self.role == "error":
+            self.setStyleSheet(
+                f"QFrame#ErrorBubble {{ background:{t.COLOR_ERROR_BACKGROUND}; "
+                f"border:1px solid {t.COLOR_ERROR_BORDER}; border-radius:{t.RADIUS_MD}; }}"
+            )
+        else:
+            self.setStyleSheet(
+                "QFrame#AssistantBubble { background: transparent; border: none; border-radius: 0; }"
+            )
+        text_color = (
+            t.COLOR_USER_TEXT if self.role == "user"
+            else t.COLOR_DANGER if self.role == "error"
+            else t.COLOR_TEXT_PRIMARY
+        )
+        self.browser.setStyleSheet(
+            f"QTextBrowser {{ background:transparent; border:none; padding:0; "
+            f"color:{text_color}; font-family:{t.FONT_TEXT}; "
+            f"font-size:{int(t.SIZE_MD.rstrip('px')) + self.font_size_offset}px; }}"
+        )
+        self.skill_tag_row._text_color = (
+            t.COLOR_USER_TEXT if self.role == "user" else t.COLOR_TEXT_PRIMARY
+        )
+        self.skill_tag_row.refresh_theme()
+
+    def set_skill_tag(self, tag: dict) -> None:
+        """Affiche le tag avec une image Qt haute résolution, hors HTML."""
+        self.skill_tag_row.set_tag(tag)
 
     def set_html(self, value: str) -> None:
-        self.browser.setHtml(value or "")
+        content = value or ""
+        self.browser.setHtml(content)
         self._fit_height()
 
-    def _fit_height(self) -> None:
-        # La largeur de texte est explicitement limitée au viewport. Cela force
-        # le retour à la ligne et empêche tout contenu de dépasser à droite.
-        viewport_width = max(40, self.browser.viewport().width())
-        self.browser.document().setTextWidth(viewport_width)
-        height = max(20, int(self.browser.document().size().height()) + 2)
-        self.browser.setFixedHeight(height)
-        self.setFixedHeight(height + 20)
+    def set_timestamp(self, timestamp: str) -> None:
+        return
 
-    def fit_to_content_width(self, maximum_width: int, minimum_width: int = 54) -> None:
+    def _fit_height(self) -> None:
+        if not is_qt_object_valid(self):
+            return
+        margins = self.layout().contentsMargins() if self.layout() else None
+        h_margins = (margins.left() + margins.right()) if margins else 4
+        v_margins = (margins.top() + margins.bottom()) if margins else 4
+        tag_w = (self.skill_tag_row.sizeHint().width() + 5) if self.skill_tag_row.isVisible() else 0
+
+        if self.width() > 40:
+            target_text_w = max(40, self.width() - h_margins - tag_w)
+        elif self.browser.viewport().width() > 100:
+            target_text_w = max(40, self.browser.viewport().width() - tag_w)
+        else:
+            parent_w = self.parentWidget().width() if self.parentWidget() else 350
+            target_text_w = max(40, parent_w - h_margins - tag_w)
+
+        self.browser.document().setTextWidth(target_text_w)
+        doc_h = math.ceil(self.browser.document().size().height())
+        height = max(20, doc_h + 4)
+        self.browser.setFixedHeight(height)
+        tag_height = self.skill_tag_row.sizeHint().height() if self.skill_tag_row.isVisible() else 0
+        self.setFixedHeight(max(height, tag_height) + v_margins + 2)
+
+    def fit_to_content_width(self, maximum_width: int, minimum_width: int = 0) -> None:
         """Adapte la bulle au contenu sans dépasser la largeur disponible."""
         maximum_width = max(minimum_width, int(maximum_width))
-        self.browser.document().setTextWidth(-1)
-        ideal_width = int(self.browser.document().idealWidth() + 0.999)
+        document = self.browser.document()
+        document.setTextWidth(-1)
+        document.adjustSize()
+        natural_width = max(
+            document.idealWidth(),
+            document.size().width(),
+        )
         margins = self.layout().contentsMargins()
         horizontal_padding = margins.left() + margins.right()
+        plain_text = self.browser.toPlainText()
+        if self.role == "user" and "\n" not in plain_text:
+            natural_width = max(
+                natural_width,
+                QFontMetrics(self.browser.font()).horizontalAdvance(plain_text),
+            )
         target_width = max(
-            minimum_width,
-            min(maximum_width, ideal_width + horizontal_padding + 2),
+            min(minimum_width, maximum_width),
+            min(maximum_width, math.ceil(natural_width) + horizontal_padding + 2),
         )
+        if self.skill_tag_row.isVisible():
+            tag_width = self.skill_tag_row.sizeHint().width() + 8
+            target_width = max(target_width, min(maximum_width, max(280, tag_width + 160)))
         self.setFixedWidth(target_width)
-        self.browser.setFixedWidth(max(30, target_width - horizontal_padding))
+        content_width = max(1, target_width - horizontal_padding)
+        if self.skill_tag_row.isVisible():
+            tag_width = min(
+                self.skill_tag_row.sizeHint().width(),
+                max(20, content_width - 40),
+            )
+            self.skill_tag_row.setFixedWidth(tag_width)
+            self.skill_tag_title.setMaximumWidth(
+                max(20, tag_width - self.skill_tag_icon.width() - 5)
+            )
+            self.browser.setFixedWidth(
+                max(30, content_width - tag_width - self.content_layout.spacing())
+            )
+        else:
+            self.browser.setFixedWidth(content_width)
+        self.setMaximumWidth(maximum_width)
+        document.setTextWidth(content_width)
         self._fit_height()
 
     def resizeEvent(self, event) -> None:

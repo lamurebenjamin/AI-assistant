@@ -8,7 +8,7 @@ import unicodedata
 from typing import Optional
 
 import numpy as np
-from PyQt5.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 import sounddevice as sd
 
 from src.config.schema import APP_DIR, DEFAULT_CONFIG, LOGGER
@@ -20,6 +20,8 @@ class KokoroWarmupThread(QThread):
     """Précharge Kokoro en arrière-plan au démarrage de l'assistant.
 
     Permet de réchauffer le contexte CUDA et d'alléger la latence du premier appel.
+    Le thread se termine silencieusement si les modèles sont absents et journalise
+    les erreurs de préchauffage.
     """
 
     def __init__(self, config, parent=None):
@@ -43,12 +45,18 @@ class KokoroWarmupThread(QThread):
 
 
 class KokoroTtsThread(QThread):
-    """Synthèse vocale française locale avec Kokoro ONNX et sounddevice."""
+    """Synthèse vocale française locale avec Kokoro ONNX et sounddevice.
+
+    ``finished_ok()`` indique une lecture terminée ou annulée proprement ;
+    ``failed(str)`` indique une erreur de modèle, de phonémisation ou de sortie
+    audio. ``stop()`` demande l'interruption et arrête sounddevice. Le thread
+    est terminal lorsque ``run()`` retourne et ne doit pas être redémarré.
+    """
 
     _g2p_cache = {}
 
-    finished_ok = pyqtSignal()
-    failed = pyqtSignal(str)
+    finished_ok = Signal()
+    failed = Signal(str)
 
     def __init__(self, text: str, config: dict, parent=None):
         super().__init__(parent)

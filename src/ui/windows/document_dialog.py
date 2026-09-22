@@ -9,7 +9,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from PyQt5.QtCore import (
+from PySide6.QtCore import (
     QEasingCurve,
     QEvent,
     QPoint,
@@ -19,11 +19,11 @@ from PyQt5.QtCore import (
     QSize,
     Qt,
     QTimer,
-    pyqtSignal,
+    Signal,
 )
-from PyQt5.QtGui import (
+from PySide6.QtGui import (
     QColor,
-    QDesktopServices,
+    QAction,
     QFont,
     QIcon,
     QPainter,
@@ -31,9 +31,9 @@ from PyQt5.QtGui import (
     QPen,
     QPixmap,
     QRegion,
+    QTextCursor,
 )
-from PyQt5.QtWidgets import (
-    QAction,
+from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QFileDialog,
@@ -59,60 +59,57 @@ except ImportError:
 
 from src.config.schema import APP_DIR, LOGGER
 import src.ui.design_tokens as t
-from src.ui.icons import ICONS_DARK, create_svg_icon, get_logo_pixmap
+from src.ui.icons import create_svg_icon, get_application_icon, get_default_tool_icon
+from src.ui.stylesheet import (
+    qss_document_preview_dialog,
+    qss_document_dialog,
+    qss_response_scroll_area,
+    qss_turn_navigation,
+    qss_transparent_surface,
+    qss_menu,
+)
 from src.ui.theme import apply_acrylic_blur, apply_rounded_corners
-from src.ui.widgets.animated_buttons import AnimatedComposerButton, AnimatedHeaderButton
-from src.ui.widgets.attachment_widget import AttachmentPreviewWidget
+from src.ui.widgets.animated_buttons import AnimatedComposerButton
+from src.ui.widgets.document_attachment_preview import DocumentAttachmentPreview
 from src.ui.widgets.audio_bars import ScrollingAudioBars
 from src.ui.widgets.chat_bubble import ChatBubble
+from src.ui.widgets.composer_bar import ComposerBar
+from src.ui.widgets.hairline import HairlineSeparator
 from src.ui.widgets.message_editor import MessageTextEdit
-from src.ui.widgets.thinking_dots import ThinkingDots
-from src.ui.widgets.tool_call_widget import ToolCallWidget
+from src.ui.widgets.thinking_dots import ShimmerLabel
+from src.ui.widgets.tool_call_widget import ThinkingGroupWidget, ToolExecutionGroupWidget
 from src.ui.widgets.slash_command_popup import SlashCommandPopup
+from src.ui.widgets.window_chrome import WindowChrome
+from src.ui.windows.conversation_controller import ConversationController
+from src.ui.windows.document_response_controller import DocumentResponseController
+from src.ui.windows.document_composer_controller import DocumentComposerController
+from src.ui.windows.document_conversation_renderer import DocumentConversationRenderer
 from src.audio.recorder import AudioRecorderThread
 from core.skill_manager import SkillManager
 
 
-def _sync_module_tokens():
-    """Synchronise les tokens du module avec le thème actif dans design_tokens."""
-    for k in t.THEME_DARK.keys():
-        globals()[k] = getattr(t, k, None)
-    globals()["FONT_DISPLAY"] = t.FONT_DISPLAY
-    globals()["FONT_TEXT"] = t.FONT_TEXT
-    globals()["RADIUS_SM"] = t.RADIUS_SM
-    globals()["RADIUS_MD"] = t.RADIUS_MD
-    globals()["RADIUS_LG"] = t.RADIUS_LG
-    globals()["RADIUS_XL"] = t.RADIUS_XL
-    globals()["RADIUS_2XL"] = t.RADIUS_2XL
-    globals()["SIZE_XS"] = t.SIZE_XS
-    globals()["SIZE_SM"] = t.SIZE_SM
-    globals()["SIZE_MD"] = t.SIZE_MD
-    globals()["SIZE_LG"] = t.SIZE_LG
-    globals()["is_dark_theme"] = t.is_dark_theme
-
-
-_sync_module_tokens()
-
-
 class DocumentDialog(QDialog):
     """Fenêtre Ctrl+9 harmonisée avec les fenêtres de résultats et pensée comme un chat."""
-    ask_requested = pyqtSignal(list, str, object, object)
+    ask_requested = Signal(list, str, object, object)
 
-    WINDOW_WIDTH = 390
+    WINDOW_WIDTH = 480
     MIN_HEIGHT = 80
     MAX_HEIGHT = 620
     MAX_RESPONSE_HEIGHT = 440
+    FONT_SIZE_OFFSET = 1
 
     def __init__(self, parent=None):
-        _sync_module_tokens()
         super().__init__(parent)
         self.host = parent
+        self.apply_config(initial=True)
         if self.host is not None and hasattr(self.host, "skill_manager"):
             self.skill_manager = self.host.skill_manager
         else:
             self.skill_manager = SkillManager()
             self.skill_manager.discover()
         self._pending_forced_tool = None
+        self._pending_skill_tag = None
+        self._setting_skill_text = False
         self.setWindowTitle("Assistant IA")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -131,10 +128,18 @@ class DocumentDialog(QDialog):
         self.collapse_animation = None
         self.turns = []
         self.current_turn_index = -1
+        self._prompt_history_index = None
+        self._prompt_history_draft = ""
         # Références conservées pendant le streaming Ctrl+9. La bulle courante
         # est mise à jour en place au lieu de reconstruire toute la conversation.
         self.current_assistant_bubble = None
+        self.current_thinking_widget = None
         self.streaming_response_active = False
+        self._allow_shrink_height = False
+        self.conversation_controller = ConversationController(self)
+        self.response_controller = DocumentResponseController(self)
+        self.composer_controller = DocumentComposerController(self)
+        self.conversation_renderer = DocumentConversationRenderer(self)
         # Le rendu des fragments SSE est regroupé pour éviter de détruire et
         # reconstruire toute la conversation à chaque token.
         self.pending_stream_render = False
@@ -148,93 +153,100 @@ class DocumentDialog(QDialog):
             app.aboutToQuit.connect(self.cleanup_temp_files)
         self._build_ui()
 
-    def _build_ui(self):
-        composer_bg = "rgba(37, 37, 38, 220)" if is_dark_theme() else "#FFFFFF"
-        composer_border = "#3C3C3C" if is_dark_theme() else "#CBD7E4"
-        preview_bg = "rgba(45, 45, 45, 180)" if is_dark_theme() else "#F1F5F9"
-        preview_border = "#3C3C3C" if is_dark_theme() else "#DDE6F0"
-        sep_bg = "rgba(255, 255, 255, 25)" if is_dark_theme() else "rgba(0, 0, 0, 25)"
-        tooltip_bg = "#1F1F1F" if is_dark_theme() else "#FFFFFF"
+    def apply_config(self, ctrl9_config=None, initial=False):
+        """Applique la configuration CTRL+9 (largeur, hauteur max, taille police)."""
+        if ctrl9_config is None:
+            if self.host is not None and hasattr(self.host, "config") and isinstance(self.host.config, dict):
+                ctrl9_config = self.host.config.get("ctrl9", {})
+            else:
+                from src.config.manager import load_config
+                ctrl9_config = load_config().get("ctrl9", {})
 
-        self.setStyleSheet(f"""
-            QDialog {{ background: transparent; }}
-            QToolTip {{
-                background-color: {tooltip_bg};
-                color: {COLOR_TEXT_PRIMARY};
-                border: 1px solid {COLOR_BORDER};
-                border-radius: {RADIUS_SM};
-                padding: 5px 8px;
-                font-family: {FONT_TEXT};
-                font-size: {SIZE_MD};
-            }}
-            QFrame#DocPanel {{
-                background-color: {COLOR_BG_ACRYLIC};
-                border: 1px solid {COLOR_BORDER_ACRYLIC};
-                border-radius: {RADIUS_2XL};
-            }}
-            QFrame#DocHeader {{ background: transparent; border: none; }}
-            QLabel {{ background: transparent; color: {COLOR_TEXT_PRIMARY}; border: none;
-                     font-family: {FONT_TEXT}; font-size: {SIZE_MD}; }}
-            QLabel#DocTitle {{ font-family: {FONT_DISPLAY};
-                              font-size: {SIZE_LG}; font-weight: 700; color: {COLOR_TEXT_PRIMARY}; }}
-            QFrame#Composer {{
-                background: {composer_bg};
-                border: 1px solid {composer_border};
-                border-radius: {RADIUS_XL};
-            }}
-            QFrame#DocumentCard {{
-                /* Les pièces jointes appartiennent visuellement au même bloc
-                   que le champ « Message assistant IA ». */
-                background: transparent;
-                border: none;
-                border-radius: 0;
-            }}
-            QLabel#Preview {{ background: {preview_bg}; border: 1px solid {preview_border};
-                             border-radius: {RADIUS_MD}; padding: 3px; }}
-            QTextEdit {{ background: transparent; border: none; padding: 6px 1px 4px 1px;
-                        color: {COLOR_TEXT_PRIMARY}; font-family: {FONT_TEXT}; font-size: {SIZE_MD}; }}
-            QTextBrowser#Response {{ background: transparent; border: none; padding: 0;
-                                    font-family: {FONT_TEXT}; font-size: {SIZE_MD}; }}
-            QPushButton#HeaderIconButton, QPushButton#ActionIconButton {{
-                background: transparent; border: none; border-radius: {RADIUS_XL}; padding: 0; margin: 0;
-            }}
-            QPushButton#HeaderIconButton:hover, QPushButton#ActionIconButton:hover,
-            QPushButton#HeaderIconButton:pressed, QPushButton#ActionIconButton:pressed {{
-                background: {COLOR_HOVER_DARK}; border: none;
-            }}
-            QPushButton#MicRecording {{ background: rgba(198, 40, 40, 35); border: none; border-radius: {RADIUS_XL}; }}
-            QScrollBar:vertical {{ background: {COLOR_SCROLLBAR_TRACK}; width: 6px; margin: 0; border-radius: 3px; }}
-            QScrollBar::handle:vertical {{ background: {COLOR_SCROLLBAR_THUMB}; min-height: 26px; border-radius: 3px; }}
-            QScrollBar::handle:vertical:hover {{ background: {COLOR_SCROLLBAR_HOVER}; }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ height: 0; background: transparent; border: none; }}
-        """)
+        self.WINDOW_WIDTH = ctrl9_config.get("width", 480)
+        self.MAX_HEIGHT = ctrl9_config.get("max_height", 620)
+        font_size = ctrl9_config.get("font_size", 14)
+        self.FONT_SIZE_OFFSET = font_size - 13
+        self.MAX_RESPONSE_HEIGHT = max(180, self.MAX_HEIGHT - 180)
+
+        self.setFixedWidth(self.WINDOW_WIDTH)
+        if hasattr(self, "_attachment_preview"):
+            self._attachment_preview.font_size_offset = self.FONT_SIZE_OFFSET
+        if hasattr(self, "response"):
+            self.response.setMaximumHeight(self.MAX_RESPONSE_HEIGHT)
+        if not initial:
+            self._apply_font_styles()
+            if hasattr(self, "turns") and self.turns:
+                self._render_conversation()
+            else:
+                self._update_height()
+
+    def _apply_font_styles(self):
+        self.setStyleSheet(qss_document_dialog(self.FONT_SIZE_OFFSET))
+        if hasattr(self, "status"):
+            self.status.setObjectName("DocStatus")
+        if hasattr(self, "composer") and hasattr(self.composer, "refresh_theme"):
+            self.composer.font_size_offset = self.FONT_SIZE_OFFSET
+            self.composer.refresh_theme()
+
+    def refresh_theme(self) -> None:
+        self._apply_font_styles()
+        if hasattr(self, "separator_container"):
+            self.separator_container.refresh_theme()
+        if hasattr(self, "header"):
+            self.header.refresh_logo()
+        if hasattr(self, "drop_zone"):
+            self.drop_zone.setIcon(
+                create_svg_icon(
+                    '<path d="M12 5v14M5 12h14"/>',
+                    t.COLOR_TEXT_PRIMARY,
+                    t.ICON_STROKE_WIDTH,
+                )
+            )
+        if hasattr(self, "mic"):
+            self.mic_icon = create_svg_icon(
+                '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>'
+                '<path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8"/>',
+                t.COLOR_TEXT_PRIMARY,
+                1.7,
+            )
+            self.recording_icon = create_svg_icon(
+                f'<circle cx="12" cy="12" r="6" fill="{t.COLOR_DANGER}" stroke="none"/>',
+                t.COLOR_DANGER,
+                1.0,
+            )
+            if not self.is_recording:
+                self.mic.setIcon(self.mic_icon)
+            else:
+                self.mic.setIcon(self.recording_icon)
+        if hasattr(self, "turns") and self.turns:
+            self._render_conversation()
+
+    def _build_ui(self):
+        self._apply_font_styles()
         outer = QVBoxLayout(self); outer.setContentsMargins(0,0,0,0); outer.setSpacing(0)
         self.panel = QFrame()
         self.panel.setObjectName("DocPanel")
         self.panel.setAttribute(Qt.WA_StyledBackground, True)
         outer.addWidget(self.panel)
-        root = QVBoxLayout(self.panel); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
+        root = QVBoxLayout(self.panel); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
 
-        header = QFrame(); header.setObjectName("DocHeader"); header.setFixedHeight(36)
-        header.mousePressEvent=self._header_press; header.mouseMoveEvent=self._header_move; header.mouseReleaseEvent=self._header_release
-        header_layout=QHBoxLayout(header); header_layout.setContentsMargins(9,1,3,0); header_layout.setSpacing(3)
-        icon=QLabel(); icon.setFixedSize(18,18); icon.setAlignment(Qt.AlignCenter)
-        icon.setPixmap(get_logo_pixmap(16, APP_DIR))
-        title=QLabel("Assistant IA"); title.setObjectName("DocTitle")
-        header_layout.addWidget(icon); header_layout.addWidget(title,1)
-        close = AnimatedHeaderButton(ICONS_DARK["close"], "Fermer", header)
+        self.header = WindowChrome(
+            "Assistant IA",
+            self.panel,
+            object_name="DocHeader",
+            title_object_name="DocTitle",
+        )
+        self.header.mousePressEvent = self._header_press
+        self.header.mouseMoveEvent = self._header_move
+        self.header.mouseReleaseEvent = self._header_release
+        close = AnimatedComposerButton("close", self.header)
+        close.setToolTip("Fermer")
         close.clicked.connect(self.reject)
-        header_layout.addWidget(close); root.addWidget(header)
+        self.header.add_action(close)
+        root.addWidget(self.header)
 
-        self.separator_container = QWidget(self.panel)
-        sep_layout = QHBoxLayout(self.separator_container)
-        sep_layout.setContentsMargins(12, 0, 12, 0)
-        sep_layout.setSpacing(0)
-        self.header_separator = QFrame(self.separator_container)
-        self.header_separator.setFixedHeight(1)
-        self.header_separator.setStyleSheet(f"background:{sep_bg};border:none;")
-        sep_layout.addWidget(self.header_separator)
+        self.separator_container = HairlineSeparator(self.panel)
+        self.header_separator = self.separator_container.line
         root.addWidget(self.separator_container)
         self.content_widget = QWidget()
         content = QVBoxLayout(self.content_widget)
@@ -242,35 +254,22 @@ class DocumentDialog(QDialog):
         content.setSpacing(4)
 
         self.drop_zone=QPushButton(self.content_widget); self.drop_zone.setObjectName("ActionIconButton")
-        self.drop_zone.setIcon(create_svg_icon('<path d="M12 5v14M5 12h14"/>','#111111',1.8)); self.drop_zone.setIconSize(QSize(20,20)); self.drop_zone.setFixedHeight(42)
+        self.drop_zone.setIcon(create_svg_icon('<path d="M12 5v14M5 12h14"/>', t.COLOR_TEXT_PRIMARY, t.ICON_STROKE_WIDTH)); self.drop_zone.setIconSize(QSize(t.ICON_SIZE_BUTTON, t.ICON_SIZE_BUTTON)); self.drop_zone.setFixedHeight(t.COMPOSER_HEIGHT + 12)
         self.drop_zone.setToolTip("Ajouter un PDF ou une image"); self.drop_zone.setCursor(Qt.PointingHandCursor); self.drop_zone.clicked.connect(self._choose_files)
         self.drop_zone.hide()
 
-        # Bandeau unique des pièces jointes dans le bloc « Message assistant IA ».
-        self.document_area=QFrame(); self.document_area.setObjectName("DocumentCard")
-        area_layout=QVBoxLayout(self.document_area); area_layout.setContentsMargins(0,0,0,0); area_layout.setSpacing(0)
-        self.image_scroll=QScrollArea(self.document_area)
-        self.image_scroll.setWidgetResizable(False); self.image_scroll.setFrameShape(QFrame.NoFrame)
-        self.image_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.image_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        # La hauteur inclut les vignettes et, pour les PDF, la ligne des pages.
-        # La barre horizontale est réservée par Qt uniquement si le contenu
-        # dépasse réellement la largeur disponible dans le compositeur.
-        self.image_scroll.setFixedHeight(130)
-        self.image_scroll.setStyleSheet(
-            "QScrollArea{background:transparent;border:none;}"
-            "QScrollArea>QWidget>QWidget{background:transparent;}"
-            "QScrollBar:horizontal{height:7px;background:transparent;margin:0 6px 1px 6px;}"
-            "QScrollBar::handle:horizontal{background:rgba(82,91,102,115);border-radius:3px;min-width:24px;}"
-            "QScrollBar::add-line:horizontal,QScrollBar::sub-line:horizontal{width:0;border:none;}"
-            "QScrollBar::add-page:horizontal,QScrollBar::sub-page:horizontal{background:transparent;}"
+        self._attachment_preview = DocumentAttachmentPreview(
+            self.content_widget,
+            font_size_offset=self.FONT_SIZE_OFFSET,
+            update_height=self._update_height,
+            fallback_pixmap=self._create_pdf_fallback_pixmap,
         )
-        self.image_strip=QWidget(); self.image_strip.setFixedHeight(116)
-        self.image_strip_layout=QHBoxLayout(self.image_strip)
-        self.image_strip_layout.setContentsMargins(6,6,6,2); self.image_strip_layout.setSpacing(10)
-        self.image_strip_layout.setAlignment(Qt.AlignLeft|Qt.AlignTop)
-        self.image_scroll.setWidget(self.image_strip); area_layout.addWidget(self.image_scroll)
-        self.document_area.hide()
+        self.paths = self._attachment_preview.paths
+        self.page_selections = self._attachment_preview.page_selections
+        self.document_area = self._attachment_preview.document_area
+        self.image_scroll = self._attachment_preview.image_scroll
+        self.image_strip = self._attachment_preview.image_strip
+        self.image_strip_layout = self._attachment_preview.image_strip_layout
         self.preview=QLabel(); self.filename=QLabel(); self.first_page=QLineEdit("1")
         self.last_page=QLineEdit("1"); self.page_info=QLabel()
         for legacy_widget in (self.preview,self.filename,self.first_page,self.last_page,self.page_info): legacy_widget.hide()
@@ -284,71 +283,91 @@ class DocumentDialog(QDialog):
         self.response.setFrameShape(QFrame.NoFrame)
         self.response.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.response.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.response.setStyleSheet(
-            "QScrollArea#Response{background:transparent;border:none;padding:0;margin:0;}"
-            "QScrollArea#Response>QWidget>QWidget{background:transparent;border:none;margin:0;padding:0;}"
-            "QScrollArea#Response QScrollBar:vertical{margin:0;}"
-        )
+        self.response.setStyleSheet(qss_response_scroll_area())
         # Aucun décalage interne : le bord gauche des bulles assistant est sur
         # le même axe que le bord gauche du compositeur « Message assistant IA ».
         # La barre verticale couvre exactement la hauteur de la conversation.
         self.response.setViewportMargins(0, 0, 0, 0)
+        self.response_holder = QWidget(self.content_widget)
+        response_holder_layout = QHBoxLayout(self.response_holder)
+        response_holder_layout.setContentsMargins(0, 0, 8, 0)
+        response_holder_layout.setSpacing(0)
+        self.turn_navigation = QFrame(self.response_holder)
+        self.turn_navigation.setObjectName("TurnNavigation")
+        self.turn_navigation.setFixedWidth(16)
+        self.turn_navigation.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.turn_navigation.setAttribute(Qt.WA_Hover, True)
+        self.turn_navigation.setStyleSheet(qss_turn_navigation())
+        self.turn_navigation_layout = QVBoxLayout(self.turn_navigation)
+        self.turn_navigation_layout.setContentsMargins(0, 3, 0, 3)
+        self.turn_navigation_layout.setSpacing(0)
+        self.turn_navigation_layout.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
+        response_holder_layout.addWidget(self.turn_navigation, 0)
+        response_holder_layout.addWidget(self.response, 1)
         self.conversation_widget=QWidget()
-        self.conversation_widget.setStyleSheet("background:transparent;border:none;")
+        self.conversation_widget.setStyleSheet(qss_transparent_surface())
+        self.conversation_widget.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Minimum
+        )
         self.conversation_layout=QVBoxLayout(self.conversation_widget)
         # La conversation commence sur le même axe gauche que le compositeur.
         # La marge des messages utilisateur est gérée à droite de leur ligne.
         self.conversation_layout.setContentsMargins(0,0,0,0)
-        self.conversation_layout.setSpacing(10)
+        self.conversation_layout.setSpacing(0)
         self.conversation_layout.setAlignment(Qt.AlignTop)
         self.response.setWidget(self.conversation_widget)
         self.response.setMinimumHeight(0)
         self.response.setMaximumHeight(self.MAX_RESPONSE_HEIGHT)
         self.response.hide()
-        content.addWidget(self.response,1)
+        content.addWidget(self.response_holder, 1)
+        self.response_holder.hide()
 
         self.status=QLabel("", self.content_widget)
-        self.status.setStyleSheet(f"color:{COLOR_PRIMARY}; font-family:{FONT_TEXT}; font-size:{SIZE_SM}; font-style:italic; padding:2px 4px;")
+        self.status.setObjectName("DocStatus")
         self.status.setTextFormat(Qt.PlainText)
         self.status.hide()
         content.addWidget(self.status)
 
-        self.composer=QFrame(); self.composer.setObjectName("Composer"); self.composer.setMinimumHeight(38); self.composer.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed); self.composer.setAcceptDrops(True); self.composer.installEventFilter(self)
-        composer_outer=QVBoxLayout(self.composer); composer_outer.setContentsMargins(4,2,4,2); composer_outer.setSpacing(2)
-        composer_outer.addWidget(self.document_area)
-        composer_layout=QHBoxLayout(); composer_layout.setContentsMargins(0,0,0,0); composer_layout.setSpacing(0)
-        self.add_button=AnimatedComposerButton("add"); self.add_button.setToolTip("Ajouter un document ou lancer une skill"); self.add_button.clicked.connect(self._show_add_menu)
-        self.question=MessageTextEdit(); self.question.setPlaceholderText("Message assistant IA"); self.question.setFixedHeight(30); self.question.setContentsMargins(0,0,0,0); self.question.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff); self.question.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.question.document().setDocumentMargin(0)
-        self.question.setViewportMargins(0,0,0,0)
-        self.question.setStyleSheet(f"QTextEdit{{background:transparent;border:none;padding:8px 1px 0 1px;color:{COLOR_TEXT_PRIMARY};font-family:{FONT_TEXT};font-size:{SIZE_MD};}}")
-        self.question.verticalScrollBar().setValue(0)
-        self.question.setAcceptDrops(False)
-        self.question.viewport().setAcceptDrops(False)
-        self.audio_bars=ScrollingAudioBars(self.composer)
-        self.mic_icon=create_svg_icon('<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8"/>',COLOR_TEXT_PRIMARY,1.7)
-        self.recording_icon=create_svg_icon('<circle cx="12" cy="12" r="6" fill="#D13438" stroke="none"/>',COLOR_DANGER,1.0)
-        self.mic=AnimatedComposerButton("mic"); self.mic.setToolTip("Dicter"); self.mic.clicked.connect(self._toggle_microphone)
-        # Le bouton d'envoi utilise le même composant, la même taille, la même
-        # couleur et la même épaisseur de trait que le microphone.
-        self.send=AnimatedComposerButton("send"); self.send.setToolTip("Envoyer"); self.send.clicked.connect(self._ask_text); self.send.hide()
-        # Pendant la génération, ce carré remplace le micro et l'envoi. Il utilise
-        # exactement le même dessin que le bouton d'arrêt de l'enregistrement audio.
-        self.stop_generation_button=AnimatedComposerButton("stop")
-        self.stop_generation_button.setToolTip("Arrêter la génération")
+        self.composer = ComposerBar(
+            self.content_widget,
+            font_size_offset=self.FONT_SIZE_OFFSET,
+            document_area=self.document_area,
+        )
+        self.composer.installEventFilter(self)
+        self.add_button = self.composer.add_button
+        self.skill_tag = self.composer.skill_tag
+        self.skill_tag_icon = self.composer.skill_tag.icon_label
+        self.skill_tag_title = self.composer.skill_tag.title_label
+        self.question = self.composer.question
+        self._question_height = t.COMPOSER_HEIGHT
+        self.audio_bars = self.composer.audio_bars
+        self.mic = self.composer.mic
+        self.send = self.composer.send
+        self.stop_generation_button = self.composer.stop_generation_button
+        self.drop_feedback = self.composer.drop_feedback
+        self.add_button.clicked.connect(self._show_add_menu)
+        self.mic_icon = create_svg_icon(
+            '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>'
+            '<path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8"/>',
+            t.COLOR_TEXT_PRIMARY,
+            1.7,
+        )
+        self.recording_icon = create_svg_icon(
+            f'<circle cx="12" cy="12" r="6" fill="{t.COLOR_DANGER}" stroke="none"/>',
+            t.COLOR_DANGER,
+            1.0,
+        )
+        self.mic.clicked.connect(self._toggle_microphone)
+        self.send.clicked.connect(self._ask_text)
         self.stop_generation_button.clicked.connect(self._stop_llm_generation)
-        self.stop_generation_button.hide()
         self.question.textChanged.connect(self._update_send_visibility)
         self.question.textChanged.connect(self._update_question_height)
+        self.question.textChanged.connect(self._clear_skill_tag_when_erased)
+        self.question.textChanged.connect(self._reset_prompt_history_navigation)
+        self.question.skill_tag_removed.connect(self._clear_skill_tag)
         self.question.send_requested.connect(self._ask_text)
+        self.question.history_requested.connect(self._navigate_prompt_history)
         self.question.pasted_files.connect(self._add_paths)
-        composer_layout.addWidget(self.add_button); composer_layout.addWidget(self.question,1); composer_layout.addWidget(self.audio_bars,1); composer_layout.addWidget(self.mic); composer_layout.addWidget(self.send); composer_layout.addWidget(self.stop_generation_button)
-        composer_outer.addLayout(composer_layout)
-        self.drop_feedback=QLabel("Déposer pour ajouter le document",self.composer)
-        self.drop_feedback.setAlignment(Qt.AlignCenter)
-        self.drop_feedback.setAttribute(Qt.WA_TransparentForMouseEvents,True)
-        self.drop_feedback.setStyleSheet(f"QLabel{{background:{COLOR_PRIMARY_LIGHT};color:{COLOR_PRIMARY};border:2px solid {COLOR_PRIMARY};border-radius:{RADIUS_LG};font-family:{FONT_TEXT};font-size:{SIZE_MD};font-weight:700;}}")
-        self.drop_feedback.hide()
 
         # Le popup slash est un widget flottant (overlay) positionné au-dessus
         # du compositeur. Il n'est PAS dans le layout — sa visibilité n'agrandit
@@ -366,39 +385,7 @@ class DocumentDialog(QDialog):
         self._update_height()
 
     def _open_source_link(self, url):
-        value = url.toString()
-        if url.scheme().lower() == "file":
-            if self.host is not None:
-                self.host.open_response_link(value)
-            else:
-                QDesktopServices.openUrl(url)
-            return
-        image_match = re.match(r"^sourceimage:([A-Za-z0-9_-]+)$", value)
-        if image_match:
-            try:
-                token = image_match.group(1)
-                padding = "=" * (-len(token) % 4)
-                payload = base64.urlsafe_b64decode(
-                    (token + padding).encode("ascii")
-                ).decode("utf-8")
-                metadata = json.loads(payload)
-                self._show_source_image_large(
-                    metadata.get("path", ""),
-                    metadata.get("title", "Source surlignée"),
-                )
-            except (ValueError, UnicodeDecodeError):
-                pass
-            return
-        if self.host is None:
-            return
-        match=re.match(r"^source:(\d+):([A-Za-z0-9_-]+)$",value)
-        if not match:
-            return
-        try:
-            token=match.group(2); padding="="*(-len(token)%4); filename=base64.urlsafe_b64decode((token+padding).encode("ascii")).decode("utf-8")
-            self.host.open_document_source(filename,int(match.group(1)))
-        except (ValueError,UnicodeDecodeError):
-            return
+        return self.conversation_controller.open_source_link(url)
 
     def _show_source_image_large(self, image_path, source_title="Source surlignée"):
         """Affiche la capture à un tiers de la taille x2 précédente."""
@@ -418,11 +405,7 @@ class DocumentDialog(QDialog):
         dialog = QDialog(self)
         dialog.setWindowTitle(source_title)
         dialog.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
-        dialog.setStyleSheet(
-            f"QDialog{{background:{COLOR_BG_PAGE};}}"
-            f"QScrollArea{{background:{COLOR_BG_PAGE};border:none;}}"
-            f"QLabel{{background:{COLOR_BG_SURFACE};border:none;}}"
-        )
+        dialog.setStyleSheet(qss_document_preview_dialog())
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(10, 10, 10, 10)
         scroll = QScrollArea(dialog)
@@ -446,14 +429,17 @@ class DocumentDialog(QDialog):
             min(target_width, available.width() - 30),
             min(target_height, available.height() - 30),
         )
-        dialog.exec_()
+        dialog.exec()
 
     def _answer_without_sources(self, answer):
         if not answer:
             return ""
         clean = re.split(r"(?im)^\s*#{2,3}\s*Sources\s*$", answer, maxsplit=1)[0]
         clean = re.split(r"(?im)^\s*Sources\s*:\s*$", clean, maxsplit=1)[0]
-        return clean.rstrip()
+        # Certains modèles ajoutent des retours à la ligne avant ou après la
+        # réponse. Ils ne doivent pas créer d'espace visuel parasite autour de
+        # la bulle, sans modifier les retours à la ligne internes.
+        return clean.lstrip().rstrip()
 
     def _attachment_preview_html(self, documents):
         """Crée les vignettes à conserver dans la bulle de la demande utilisateur."""
@@ -508,10 +494,10 @@ class DocumentDialog(QDialog):
                 continue
             # Une vignette de document et sa ligne de pages ont la même hauteur
             # totale qu'une vignette d'image seule.
-            total_h = 76
+            total_h = t.DOCUMENT_THUMBNAIL_HEIGHT
             caption_h = 16 if is_pdf else 0
             image_h = total_h - caption_h
-            shown = pixmap.scaled(76, image_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            shown = pixmap.scaled(t.DOCUMENT_THUMBNAIL_WIDTH, image_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             rendered_path = os.path.join(
                 tempfile.gettempdir(),
                 f"assistant_turn_rendered_{os.getpid()}_{time.monotonic_ns()}_{index}.png",
@@ -531,7 +517,7 @@ class DocumentDialog(QDialog):
 
             caption = (
                 f'<div style="height:{caption_h}px; line-height:{caption_h}px; '
-                f'text-align:center; font-size:10px; color:#52677C;">'
+                f'text-align:center; font-size:{10 + self.FONT_SIZE_OFFSET}px; color:{t.COLOR_STATUS_SUBTLE};">'
                 f'{html.escape(page_caption)}</div>'
                 if is_pdf else ""
             )
@@ -561,245 +547,43 @@ class DocumentDialog(QDialog):
         return documents, attachments_html
 
     def _clear_conversation_widgets(self):
-        while self.conversation_layout.count():
-            item = self.conversation_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.setParent(None)
-                widget.deleteLater()
+        return self.conversation_renderer._clear_conversation_widgets()
+
+    def _clear_turn_navigation(self):
+        return self.conversation_renderer._clear_turn_navigation()
 
     def _render_conversation(self):
-        self._clear_conversation_widgets()
-        self.current_assistant_bubble = None
-        if not self.turns:
-            self.response.hide()
-            return
-        available = max(180, self.width() - 34)
-        bubble_width = max(140, available - 50)
-        for turn_index, turn in enumerate(self.turns):
-            raw_question = turn.get("question", "")
-            if raw_question == "Question audio":
-                # Conserve dans l'historique le visuel des barres qui défilait
-                # pendant la dictée, plutôt qu'une icône de microphone.
-                bars_width, bars_height = 78, 28
-                pix = QPixmap(bars_width, bars_height)
-                pix.fill(Qt.transparent)
-                painter = QPainter(pix)
-                painter.setRenderHint(QPainter.Antialiasing, True)
-                painter.setPen(Qt.NoPen)
-                levels = (0.18, 0.38, 0.68, 0.42, 0.82, 0.55, 0.31, 0.74, 0.48, 0.24, 0.58, 0.35, 0.16)
-                bar_width, gap = 3.0, 3.0
-                total_width = len(levels) * bar_width + (len(levels) - 1) * gap
-                x0 = (bars_width - total_width) / 2.0
-                center_y = bars_height / 2.0
-                for index, level in enumerate(levels):
-                    height = 3.0 + level * (bars_height - 5.0)
-                    painter.setBrush(QColor(82, 91, 102, 190))
-                    painter.drawRoundedRect(
-                        QRectF(x0 + index * (bar_width + gap), center_y - height / 2.0,
-                               bar_width, height),
-                        bar_width / 2.0, bar_width / 2.0,
-                    )
-                painter.end()
-                bars_path = os.path.join(
-                    tempfile.gettempdir(), f"assistant_chat_audio_bars_{os.getpid()}.png"
-                )
-                pix.save(bars_path, "PNG")
-                question = f'<img src="{Path(bars_path).as_uri()}" width="78" height="28" />'
-            else:
-                question = html.escape(raw_question).replace("\n", "<br>")
-            user_row = QWidget(self.conversation_widget)
-            user_row.setStyleSheet("background:transparent;border:none;")
-            user_layout = QHBoxLayout(user_row)
-            user_layout.setContentsMargins(0, 0, 8, 0)
-            user_layout.setSpacing(0)
-            user_bubble = ChatBubble("user", user_row)
-            # Les pièces jointes sont affichées avant la question, comme dans le
-            # compositeur, puis la bulle épouse le contenu et reste alignée à droite.
-            user_bubble.set_html(turn.get("attachments_html", "") + question)
-            user_bubble.fit_to_content_width(bubble_width)
-            user_layout.addStretch(1)
-            user_layout.addWidget(user_bubble, 0, Qt.AlignRight | Qt.AlignTop)
-            self.conversation_layout.addWidget(user_row)
+        return self.conversation_controller.render()
 
-            answer = self._answer_without_sources(turn.get("answer", ""))
-            tools = turn.get("tools", [])
-            is_loading = turn.get("loading", False)
-            has_running_tool = any(t.get("status") == "running" for t in tools)
+    def _render_conversation_impl(self):
+        return self.conversation_renderer.render()
 
-            if tools or answer or is_loading:
-                assistant_row = QWidget(self.conversation_widget)
-                assistant_row.setStyleSheet("background:transparent;border:none;")
-                assistant_layout = QVBoxLayout(assistant_row)
-                assistant_layout.setContentsMargins(0, 0, 50, 0)
-                assistant_layout.setSpacing(6)
-                assistant_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+    def _update_turn_navigation_visibility(self):
+        return self.conversation_renderer._update_turn_navigation_visibility()
 
-                # A. Widgets des outils exécutés
-                for tool_info in tools:
-                    tool_widget = ToolCallWidget(tool_info, assistant_row)
-                    tool_widget.setFixedWidth(bubble_width)
-                    tool_widget.toggled.connect(self._on_tool_widget_toggled)
-                    assistant_layout.addWidget(tool_widget, 0, Qt.AlignLeft)
-
-                # B. Points de chargement (affichés uniquement si aucun outil n'est en cours et aucune réponse reçue)
-                if is_loading and not answer and not has_running_tool:
-                    dots_row = QWidget(assistant_row)
-                    dots_row.setStyleSheet("background:transparent;border:none;")
-                    dots_layout = QHBoxLayout(dots_row)
-                    dots_layout.setContentsMargins(0, 0, 0, 0)
-                    dots_layout.setSpacing(0)
-                    thinking_bubble = ChatBubble("assistant", dots_row)
-                    thinking_bubble.setFixedWidth(78)
-                    thinking_bubble.browser.hide()
-                    dots = ThinkingDots(thinking_bubble)
-                    thinking_bubble.layout().addWidget(dots, 0, Qt.AlignLeft | Qt.AlignVCenter)
-                    thinking_bubble.setFixedHeight(44)
-                    dots_layout.addWidget(thinking_bubble, 0, Qt.AlignLeft | Qt.AlignTop)
-                    dots_layout.addStretch(1)
-                    assistant_layout.addWidget(dots_row, 0, Qt.AlignLeft)
-
-                # C. Bulle de réponse du LLM
-                if answer:
-                    rendered = (
-                        self.host.markdown_to_html(answer)
-                        if self.host is not None
-                        else html.escape(answer).replace("\n", "<br>")
-                    )
-                    assistant_bubble = ChatBubble("assistant", assistant_row)
-                    assistant_bubble.setFixedWidth(bubble_width)
-                    assistant_bubble.link_clicked.connect(self._open_source_link)
-                    assistant_bubble.set_html(rendered + turn.get("sources_html", ""))
-                    if turn_index == self.current_turn_index:
-                        self.current_assistant_bubble = assistant_bubble
-                    assistant_layout.addWidget(assistant_bubble, 0, Qt.AlignLeft)
-
-                self.conversation_layout.addWidget(assistant_row)
-        self.response.show()
-        self.conversation_widget.adjustSize()
-        QTimer.singleShot(0, self._update_height)
-        QTimer.singleShot(0, self._scroll_to_bottom)
+    def _refresh_conversation_widths(self):
+        return self.conversation_renderer._refresh_conversation_widths()
 
     def _scroll_to_bottom(self):
-        bar=self.response.verticalScrollBar()
-        bar.setValue(bar.maximum())
+        return self.conversation_renderer._scroll_to_bottom()
+
+    def _sync_conversation_widget_height(self):
+        return self.conversation_renderer._sync_conversation_widget_height()
+
+    def _update_response_scroll_policy(self):
+        return self.conversation_renderer._update_response_scroll_policy()
+
+    def _refresh_stream_view(self):
+        return self.conversation_renderer._refresh_stream_view()
 
     def _update_height(self):
-        self.layout().activate()
-        self.composer.layout().activate()
-        self.content_widget.layout().activate()
-
-        response_h = 0
-        if self.response.isVisible():
-            self.conversation_layout.activate()
-            doc_h = self.conversation_layout.sizeHint().height() + 4
-            if self.streaming_response_active:
-                # Une hauteur stable évite la recomposition répétée de la fenêtre
-                # translucide/Acrylic pendant l'arrivée des tokens.
-                response_h = self.MAX_RESPONSE_HEIGHT
-            else:
-                response_h = max(45, min(self.MAX_RESPONSE_HEIGHT, doc_h))
-            self.response.setFixedHeight(response_h)
-        else:
-            self.response.setFixedHeight(0)
-
-        # The response and composer are stacked vertically. Computing the height
-        # explicitly avoids the conversation being painted behind the composer.
-        header_h = 36
-        separator_h = 1 if self.separator_container.isVisible() else 0
-        top_bottom_margins = 16
-        content_spacing = 4 if response_h else 0
-        composer_h = max(38, self.composer.sizeHint().height())
-        target = header_h + separator_h + top_bottom_margins + content_spacing + response_h + composer_h + 2
-
-        # Quand l'utilisateur tape '/' au début de la conversation (ou quand la fenêtre
-        # est encore petite), on agrandit la hauteur pour afficher entièrement le menu
-        # des commandes skills sans être coupé, tant que l'on ne dépasse pas MAX_HEIGHT.
-        if hasattr(self, 'slash_popup') and self.slash_popup.isVisible():
-            popup_h = self.slash_popup.content_height() if hasattr(self.slash_popup, 'content_height') else self.slash_popup.height()
-            min_needed_for_slash = header_h + separator_h + top_bottom_margins + composer_h + popup_h + 12
-            target = max(target, min_needed_for_slash)
-
-        # Une fois que la fenêtre Ctrl+9 a augmenté en hauteur, ne jamais rediminuer la hauteur
-        # pour que la position du bloc message assistant IA ne remonte pas.
-        if not self.is_collapsed:
-            target = max(self.height(), target, self.expanded_height)
-
-        target = max(self.MIN_HEIGHT, min(self.MAX_HEIGHT, target))
-
-        if not self.is_collapsed and abs(self.height() - target) > 2:
-            self.setFixedHeight(target)
-            self.expanded_height = target
-
-        # Repositionner le popup slash flottant au-dessus du compositeur
-        if hasattr(self, 'slash_popup') and self.slash_popup.isVisible():
-            self._position_slash_popup()
+        return self.conversation_renderer._update_height()
 
     def _add_sources_html(self, answer, documents):
-        if fitz is None or not answer.strip(): return ""
-        by_name={}
-        for document in documents:
-            path=document.get("path") if isinstance(document,dict) else document
-            if path: by_name[os.path.basename(path).casefold()]=path
-        citations=re.findall(r"([^\n/\\]+?\.pdf)\s*[—-]\s*(?:p(?:age)?\.?\s*)?(\d+)(?:\s*\n+\s*>?\s*(?:Extrait\s*:\s*)?([^\n]+))?",answer,re.IGNORECASE)
-        cards=[]
-        for index,(filename,page_text,excerpt) in enumerate(citations):
-            path=by_name.get(os.path.basename(filename.strip()).casefold())
-            if not path: continue
-            try:
-                doc=fitz.open(path); total=doc.page_count; page_number=max(1,int(page_text))
-                if page_number>total: doc.close(); continue
-                page=doc.load_page(page_number-1); needle=excerpt.strip().strip(" \t\r\n\"'«»"); rects=page.search_for(needle) if len(needle)>=8 else []
-                if not rects and len(needle)>80: rects=page.search_for(needle[:80])
-                clip=page.rect
-                if rects:
-                    union=fitz.Rect(rects[0])
-                    for rect in rects[1:]: union|=rect
-                    clip=fitz.Rect(max(page.rect.x0,union.x0-28),max(page.rect.y0,union.y0-42),min(page.rect.x1,union.x1+28),min(page.rect.y1,union.y1+42))
-                    highlight=page.add_highlight_annot(rects); highlight.set_colors(stroke=(0.55, 0.92, 0.66)); highlight.update()
-                # Conserve une capture haute définition distincte pour la loupe
-                # et la fenêtre x2. Les anciens tours ne sont plus écrasés car le
-                # nom contient un identifiant unique par capture.
-                capture_id = f"{time.monotonic_ns()}_{index}"
-                pix=page.get_pixmap(matrix=fitz.Matrix(3.0,3.0),clip=clip,alpha=False,annots=True)
-                image_path=os.path.join(tempfile.gettempdir(),f"assistant_source_{os.getpid()}_{capture_id}.png")
-                pix.save(image_path); doc.close()
-                self._temp_files.add(image_path)
-                source_pixmap=QPixmap(image_path)
-                max_w=max(120,self.width()-82)
-                display_w=min(source_pixmap.width(), max_w)
-                display_h=max(1, round(source_pixmap.height() * display_w / max(1, source_pixmap.width())))
-                token=base64.urlsafe_b64encode(os.path.basename(path).encode("utf-8")).decode("ascii").rstrip("=")
-                href=f"source:{page_number}:{token}"; uri=Path(image_path).as_uri(); title=html.escape(os.path.splitext(os.path.basename(path))[0])
-                source_title = f"{os.path.splitext(os.path.basename(path))[0]} (Page {page_number}/{total})"
-                image_payload = json.dumps(
-                    {"path": image_path, "title": source_title},
-                    ensure_ascii=False,
-                ).encode("utf-8")
-                image_token = base64.urlsafe_b64encode(image_payload).decode("ascii").rstrip("=")
-                image_href = f"sourceimage:{image_token}"
-                cards.append(
-                    f'<div style="margin-top:12px; padding-top:9px; border-top:1px solid #C9E8D3;">'
-                    f'<div style="font-size:10px; font-style:italic; color:#526B5B;">'
-                    f'Source : <a href="{href}" style="color:#397D58; text-decoration:none;">'
-                    f'{title} (Page {page_number}/{total})</a></div>'
-                    # Le navigateur affiche la capture réduite via width/height,
-                    # mais conserve le fichier haute définition comme ressource.
-                    # La loupe x2 prélève donc directement des pixels nets.
-                    f'<div style="margin-top:8px;"><a href="{image_href}">'
-                    f'<img src="{uri}" width="{display_w}" height="{display_h}" />'
-                    f'</a></div></div>'
-                )
-            except Exception: LOGGER.exception("Impossible de générer la capture de la source")
-        if not cards: return ""
-        return ''.join(cards)
+        return self.conversation_renderer._add_sources_html(answer, documents)
 
     def show_source_captures(self, answer, documents):
-        if not self.turns: return
-        sources=self._add_sources_html(answer,documents)
-        if sources:
-            self.turns[-1]["sources_html"]=sources
-            self._render_conversation()
+        return self.conversation_controller.show_source_captures(answer, documents)
 
     def _header_press(self,event):
         if event.button()==Qt.LeftButton:
@@ -857,72 +641,84 @@ class DocumentDialog(QDialog):
 
     def focus_message_input(self):
         """Place immédiatement le curseur dans « Message assistant IA »."""
+        if not self.isVisible():
+            return
         if self.is_collapsed:
             self.toggle_collapse()
         self.raise_()
         self.activateWindow()
-        self.question.setFocus(Qt.ShortcutFocusReason)
+        self.question.setFocus(Qt.ActiveWindowFocusReason)
         cursor = self.question.textCursor()
-        cursor.movePosition(cursor.End)
+        cursor.movePosition(QTextCursor.End)
         self.question.setTextCursor(cursor)
+        self.question.ensurePolished()
 
     def showEvent(self,event):
         super().showEvent(event)
         QTimer.singleShot(0,self._apply_effects)
         QTimer.singleShot(0,self._update_height)
-        QTimer.singleShot(0,self.focus_message_input)
+        # Windows peut appliquer l'activation après show(). Réessayer après les
+        # étapes d'activation garantit que la première frappe arrive au champ.
+        for delay in (0, 80, 180):
+            QTimer.singleShot(delay, self.focus_message_input)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_rounded_masks()
+
+    def _update_rounded_masks(self):
+        radius = max(1, int(t.RADIUS_2XL.rstrip("px")))
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(self.rect()), radius, radius)
+        self.setMask(QRegion(path.toFillPolygon().toPolygon()))
+        if hasattr(self, "panel"):
+            panel_path = QPainterPath()
+            panel_path.addRoundedRect(QRectF(self.panel.rect()), radius, radius)
+            self.panel.setMask(QRegion(panel_path.toFillPolygon().toPolygon()))
+
     def _apply_effects(self):
-        # Ne pas appliquer d'acrylique DWM ni d'attributs de coins DWM natifs :
-        # L'effet acrylique DWM force un rectangle opaque sur tout le bounding box
-        # du HWND, rendant les 4 coins rectangulaires au lieu d'arrondis.
-        # Avec Qt.WA_TranslucentBackground seul, Qt gère la transparence 32-bit ARGB
-        # et affiche directement le DocPanel avec ses coins arrondis parfaits.
-        pass
+        # Applique le flou DWM après la création du HWND. Un seul arrondi est
+        # dessiné par Qt sur DocPanel : l'arrondi DWM natif est volontairement
+        # désactivé pour éviter un second rayon différent.
+        if self.windowHandle() is None:
+            return
+        self._update_rounded_masks()
+        apply_acrylic_blur(int(self.winId()))
+        apply_rounded_corners(int(self.winId()))
 
     def _update_question_height(self):
-        """Agrandit la saisie jusqu'à trois lignes, puis active son défilement."""
-        document = self.question.document()
-        document.setTextWidth(max(40, self.question.viewport().width()))
-        line_height = max(14, self.question.fontMetrics().lineSpacing())
-        minimum_height = 30
-        maximum_height = minimum_height + 2 * line_height
-        content_height = int(document.size().height()) + 8
-        target_height = max(minimum_height, min(maximum_height, content_height))
-        self.question.setFixedHeight(target_height)
-        self.question.setVerticalScrollBarPolicy(
-            Qt.ScrollBarAsNeeded if content_height > maximum_height else Qt.ScrollBarAlwaysOff
-        )
-        if content_height > maximum_height:
-            bar = self.question.verticalScrollBar()
-            bar.setValue(bar.maximum())
-        self._update_height()
+        return self.composer_controller._update_question_height()
 
     def _update_send_visibility(self):
-        """Affiche une seule action adaptée à l'état du compositeur."""
-        if self.streaming_response_active:
-            self.mic.hide()
-            self.send.hide()
-            self.stop_generation_button.show()
-            return
-        self.stop_generation_button.hide()
-        if self.is_recording:
-            self.mic.show()
-            self.send.hide()
-            return
-        has_text = bool(self.question.toPlainText().strip())
-        self.mic.setVisible(not has_text)
-        self.send.setVisible(has_text)
+        return self.composer_controller._update_send_visibility()
 
     def _stop_llm_generation(self):
-        """Arrête réellement la génération sans afficher de message intermédiaire."""
-        if not self.streaming_response_active:
-            return
-        self.stop_generation_button.setEnabled(False)
-        thread = self.host.document_thread if self.host is not None else None
-        if thread is not None and thread.isRunning():
-            thread.stop()
-        else:
-            self.finish_response()
+        return self.composer_controller._stop_llm_generation()
+
+    def _ask_text(self):
+        return self.composer_controller._ask_text()
+
+    def _prompt_history(self):
+        return self.composer_controller._prompt_history()
+
+    def _reset_prompt_history_navigation(self):
+        return self.composer_controller._reset_prompt_history_navigation()
+
+    def _navigate_prompt_history(self, direction: int):
+        return self.composer_controller._navigate_prompt_history(direction)
+
+    def _set_inline_recording_visual(self, active):
+        return self.composer_controller._set_inline_recording_visual(active)
+
+    def _toggle_microphone(self):
+        return self.composer_controller._toggle_microphone()
+
+    def _audio_ready(self, data, duration, rms):
+        return self.composer_controller._audio_ready(data, duration, rms)
+
+    def _audio_error(self, message):
+        return self.composer_controller._audio_error(message)
+
     @staticmethod
     def _supported(path): return os.path.isfile(path) and os.path.splitext(path)[1].lower() in {".pdf",".png",".jpg",".jpeg",".webp",".bmp",".gif",".tif",".tiff"}
     def _dragged_paths(self,event):
@@ -962,35 +758,14 @@ class DocumentDialog(QDialog):
         menu.setObjectName("ComposerAddMenu")
         menu.setAttribute(Qt.WA_TranslucentBackground, False)
         menu.setAutoFillBackground(True)
-        menu.setStyleSheet(f"""
-            QMenu#ComposerAddMenu {{
-                background-color: {COLOR_BG_SURFACE};
-                color: {COLOR_TEXT_PRIMARY};
-                border: 1px solid {COLOR_BORDER};
-                border-radius: {RADIUS_MD};
-                padding: 6px;
-                font-family: {FONT_TEXT};
-                font-size: {SIZE_MD};
-            }}
-            QMenu#ComposerAddMenu::item {{
-                background-color: transparent;
-                color: {COLOR_TEXT_PRIMARY};
-                min-height: 22px;
-                padding: 6px 20px 6px 12px;
-                margin: 2px;
-                border: none;
-                border-radius: {RADIUS_SM};
-            }}
-            QMenu#ComposerAddMenu::item:selected {{
-                background-color: {COLOR_PRIMARY};
-                color: {COLOR_TEXT_INVERSE};
-            }}
-            QMenu#ComposerAddMenu::separator {{
-                height: 1px;
-                background-color: {COLOR_BORDER_SUBTLE};
-                margin: 4px 8px;
-            }}
-        """)
+        menu.setStyleSheet(
+            qss_menu(
+                "ComposerAddMenu",
+                font_size=f"{int(t.SIZE_MD.rstrip('px')) + self.FONT_SIZE_OFFSET}px",
+                selected_as_primary=True,
+                padding=6,
+            )
+        )
 
         # 1. Option Ajouter un PDF ou une image
         act_add_file = menu.addAction("Ajouter un PDF ou une image")
@@ -1062,24 +837,90 @@ class DocumentDialog(QDialog):
             avail = screen.availableGeometry()
             if target_y < avail.top():
                 target_y = btn_pos.y() + self.add_button.height() + 4
-        menu.exec_(QPoint(btn_pos.x(), target_y))
+        menu.exec(QPoint(btn_pos.x(), target_y))
 
     def _on_skill_tool_selected(self, skill_name: str, tool_name: str):
-        prompts = {
-            "create_pdf": "Créer un document PDF : ",
-            "create_docx": "Créer un document Word (.docx) : ",
-            "create_excel": "Créer un classeur Excel (.xlsx) : ",
-            "create_pptx": "Créer une présentation PowerPoint (.pptx) : ",
+        self._select_skill_tool(skill_name, tool_name)
+
+    def _skill_tool_details(self, skill_name, tool_name):
+        skill_manager = self.skill_manager
+        info = skill_manager.get_tool(tool_name)
+        skill = skill_manager.get_skill(skill_name)
+        skill_title = str(getattr(skill, "name", skill_name)).strip() or skill_name
+        tool_title = tool_name.replace("_", " ").capitalize()
+        if tool_name in {"create_pdf", "create_docx", "create_excel", "create_pptx"}:
+            tool_title = {
+                "create_pdf": "Créer un document PDF",
+                "create_docx": "Créer un document Word",
+                "create_excel": "Créer un classeur Excel",
+                "create_pptx": "Créer une présentation PowerPoint",
+            }[tool_name]
+        parameters = info.get("parameters") or {}
+        required = parameters.get("required") or []
+        icon_path = skill_manager.get_skill_icon(skill_name)
+        return {
+            "skill_name": skill_name,
+            "tool_name": tool_name,
+            "title": f"{skill_title} - {tool_title}",
+            "icon": icon_path,
+            "requires_arguments": bool(required),
         }
-        prompt_text = prompts.get(tool_name, f"Exécuter l'outil {tool_name} : ")
-        self.question.setPlainText(prompt_text)
-        self.question.setFocus()
+
+    def _set_skill_tag(self, tag):
+        self._pending_skill_tag = tag
+        icon_path = tag.get("icon")
+        icon_html = ""
+        if icon_path:
+            icon_html = (
+                f'<img src="{Path(icon_path).as_uri()}" width="18" height="18" '
+                'style="vertical-align:middle;">&nbsp;'
+            )
+        tag_html = (
+            f'<span style="background-color:{t.COLOR_PRIMARY_LIGHT}; '
+            f'color:{t.COLOR_TEXT_PRIMARY}; font-weight:600; '
+            f'padding:0 5px 1px; vertical-align:middle;">{icon_html}'
+            f'{html.escape(tag["title"])}</span>&nbsp;'
+        )
+        self._setting_skill_text = True
         cursor = self.question.textCursor()
-        cursor.movePosition(cursor.End)
+        cursor.movePosition(QTextCursor.Start)
+        previous_text = self.question.toPlainText()
+        cursor.insertHtml(tag_html)
         self.question.setTextCursor(cursor)
+        inserted_length = max(1, len(self.question.toPlainText()) - len(previous_text))
+        self.question.set_skill_tag_range(0, inserted_length)
+        self._setting_skill_text = False
+        self.skill_tag.hide()
+
+    def _clear_skill_tag_when_erased(self):
+        if (
+            not self._setting_skill_text
+            and self._pending_skill_tag
+            and not self.question.toPlainText().replace("\uFFFC", "").strip()
+        ):
+            self._pending_forced_tool = None
+            self._clear_skill_tag()
+
+    def _clear_skill_tag(self):
+        title = str((self._pending_skill_tag or {}).get("title", ""))
+        if title:
+            self._setting_skill_text = True
+            self.question.remove_skill_tag()
+            self._setting_skill_text = False
+        self._pending_skill_tag = None
+        self.skill_tag.hide()
+
+    def _select_skill_tool(self, skill_name, tool_name, existing_text=""):
+        tag = self._skill_tool_details(skill_name, tool_name)
+        self._setting_skill_text = True
+        self.question.setPlainText(existing_text)
+        self._setting_skill_text = False
+        self._set_skill_tag(tag)
         self._pending_forced_tool = tool_name
-        self._update_send_visibility()
-        self._update_question_height()
+        self.question.setFocus()
+        if tag["requires_arguments"]:
+            self._update_send_visibility()
+            self._update_question_height()
 
     # ------------------------------------------------------------------
     # Slash-command popup handlers
@@ -1099,6 +940,7 @@ class DocumentDialog(QDialog):
             "docx": "Document Word",
             "excel": "Classeur Excel",
             "pptx": "Présentation PowerPoint",
+            "ftnc": "FTNC",
         }
         tool_titles = {
             "create_pdf": "Créer un document PDF",
@@ -1106,13 +948,6 @@ class DocumentDialog(QDialog):
             "create_excel": "Créer un classeur Excel",
             "create_pptx": "Créer une présentation PowerPoint",
         }
-        tool_icons = {
-            "create_pdf": "📄",
-            "create_docx": "📝",
-            "create_excel": "📊",
-            "create_pptx": "📽️",
-        }
-
         actions = []
         discovered = sorted(skill_mgr.skills.keys()) if skill_mgr.skills else skill_mgr.list_skills()
         if not discovered:
@@ -1127,12 +962,18 @@ class DocumentDialog(QDialog):
                 t_name = tool.get("name", "")
                 t_desc = tool.get("description", "")
                 t_title = tool_titles.get(t_name, t_name.replace("_", " ").capitalize())
+                skill_icon = skill_mgr.get_skill_icon(skill_name)
+                icon = (
+                    get_application_icon(skill_icon)
+                    if skill_icon
+                    else get_default_tool_icon()
+                )
                 actions.append({
                     "command": f"/{t_name}",
                     "title": t_title,
                     "description": t_desc,
                     "skill": skill_titles.get(skill_name, skill_name.capitalize()),
-                    "icon": tool_icons.get(t_name, "🔧"),
+                    "icon": icon,
                     "tool_name": t_name,
                     "skill_name": skill_name,
                 })
@@ -1186,335 +1027,90 @@ class DocumentDialog(QDialog):
         import re as _re
         cleaned = _re.sub(r'(?:^|\s)/\S*$', '', full_text).strip()
 
-        prompts = {
-            "create_pdf": "Créer un document PDF : ",
-            "create_docx": "Créer un document Word (.docx) : ",
-            "create_excel": "Créer un classeur Excel (.xlsx) : ",
-            "create_pptx": "Créer une présentation PowerPoint (.pptx) : ",
-        }
-        prompt_text = prompts.get(tool_name, f"Exécuter l'outil {tool_name} : ")
-        new_text = f"{cleaned} {prompt_text}".strip() if cleaned else prompt_text
-        self.question.setPlainText(new_text)
-        self.question.setFocus()
-        cursor = self.question.textCursor()
-        cursor.movePosition(cursor.End)
-        self.question.setTextCursor(cursor)
-        self._pending_forced_tool = tool_name
-        self._update_send_visibility()
-        self._update_question_height()
+        self._select_skill_tool(skill_name, tool_name, cleaned)
         self._on_slash_dismissed()
 
     def _choose_files(self):
         paths,_=QFileDialog.getOpenFileNames(self,"Ajouter des documents","","Documents (*.pdf *.png *.jpg *.jpeg *.webp *.bmp *.gif *.tif *.tiff)")
         self._add_paths(paths)
+
+    @staticmethod
+    def _create_pdf_fallback_pixmap(width: int, height: int) -> QPixmap:
+        """Crée une vignette neutre lorsque le rendu PDF n'est pas disponible."""
+        pixmap = QPixmap(max(1, int(width)), max(1, int(height)))
+        pixmap.fill(QColor(t.COLOR_PREVIEW_BACKGROUND))
+        painter = QPainter(pixmap)
+        painter.setPen(QPen(QColor(t.COLOR_BORDER), 1))
+        painter.drawRect(pixmap.rect().adjusted(1, 1, -2, -2))
+        painter.setPen(QColor(t.COLOR_TEXT_SECONDARY))
+        painter.setFont(QFont("Arial", max(8, min(14, int(width / 7)))))
+        painter.drawText(pixmap.rect(), Qt.AlignCenter, "PDF")
+        painter.end()
+        return pixmap
+
     def _page_count(self,path):
-        if path.lower().endswith('.pdf') and fitz is not None:
-            doc=fitz.open(path)
-            try:return max(1,doc.page_count)
-            finally:doc.close()
-        return 1
-    def _add_paths(self,paths):
-        for path in paths:
-            path=os.path.abspath(path)
-            if self._supported(path) and path not in self.paths:
-                count=self._page_count(path); self.paths.append(path); self.page_selections[path]=(1,count)
-        if self.paths:self._show_document(len(self.paths)-1)
+        return self._attachment_preview.page_count(path)
+
+    def _add_paths(self, paths):
+        self._attachment_preview.add_paths(paths, self._supported)
+
     def _clear_image_strip(self):
-        while self.image_strip_layout.count():
-            w=self.image_strip_layout.takeAt(0).widget()
-            if w:w.deleteLater()
-    def _remove_path(self,path):
-        if path in self.paths:self.paths.remove(path); self.page_selections.pop(path,None)
-        self._show_document(len(self.paths)-1)
+        self._attachment_preview.clear_image_strip()
+
+    def _remove_path(self, path):
+        self._attachment_preview.remove_path(path)
+
     def _rebuild_image_strip(self):
-        """Affiche chaque pièce jointe dans une carte à contour gris arrondi."""
-        self._clear_image_strip()
-        cell_w, cell_h = 104, 110
-        preview_w, pdf_preview_h = 86, 66
-        pdf_title_y, pdf_title_h = 68, 15
-        page_row_y, page_row_h = 82, 25
+        self._attachment_preview.rebuild_image_strip()
 
-        for path in self.paths:
-            is_pdf = path.lower().endswith('.pdf')
-            holder = AttachmentPreviewWidget(self.image_strip)
-            holder.setFixedSize(cell_w, cell_h)
-            if is_pdf:
-                count = self._page_count(path)
-                first, last = self.page_selections.get(path, (1, count))
-                source = QPixmap()
-                if fitz is not None:
-                    try:
-                        doc = fitz.open(path)
-                        try:
-                            page_idx = max(0, min(first - 1, doc.page_count - 1))
-                            pix = doc.load_page(page_idx).get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
-                            source.loadFromData(pix.tobytes('png'))
-                        finally:
-                            doc.close()
-                    except Exception:
-                        LOGGER.exception("Impossible de générer la vignette PDF pour %s", path)
-                if source.isNull():
-                    source = self._create_pdf_fallback_pixmap(preview_w, pdf_preview_h - 6)
-                shown = source.scaled(preview_w, pdf_preview_h - 6, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                x = (cell_w - shown.width()) // 2
-                y = 4 + max(0, (pdf_preview_h - 6 - shown.height()) // 2)
-                rounded = QPixmap(shown.size())
-                rounded.fill(Qt.transparent)
-                painter = QPainter(rounded)
-                painter.setRenderHint(QPainter.Antialiasing, True)
-                rect = QRectF(0.5, 0.5, shown.width() - 1.0, shown.height() - 1.0)
-                clip = QPainterPath()
-                clip.addRoundedRect(rect, 5.0, 5.0)
-                painter.setClipPath(clip)
-                painter.drawPixmap(0, 0, shown)
-                painter.setPen(QPen(QColor(0, 0, 0, 32), 1.0))
-                painter.setBrush(Qt.NoBrush)
-                painter.drawRoundedRect(rect, 5.0, 5.0)
-                painter.end()
-                label = QLabel(holder)
-                label.setPixmap(rounded)
-                label.setGeometry(x, y, shown.width(), shown.height())
-
-                pdf_name = Path(path).stem
-                displayed_name = pdf_name if len(pdf_name) <= 12 else pdf_name[:12] + "..."
-                name_label = QLabel(displayed_name, holder)
-                name_label.setGeometry(4, pdf_title_y, cell_w - 8, pdf_title_h)
-                name_label.setAlignment(Qt.AlignCenter); name_label.setToolTip(pdf_name)
-                name_label.setStyleSheet(f"QLabel{{background:transparent;border:none;color:{COLOR_TEXT_SECONDARY};font-family:{FONT_TEXT};font-size:{SIZE_XS};font-weight:600;padding:0;margin:0;}}")
-
-                pages = QWidget(holder); pages.setGeometry(0, page_row_y, cell_w, page_row_h)
-                row = QHBoxLayout(pages); row.setContentsMargins(15, 0, 15, 1); row.setSpacing(0)
-                first_edit, last_edit = QLineEdit(str(first)), QLineEdit(str(last))
-                for edit in (first_edit, last_edit):
-                    edit.setAlignment(Qt.AlignCenter); edit.setFixedSize(24, 19)
-                    edit.setStyleSheet(f"QLineEdit{{background:transparent;border:1px solid transparent;border-radius:{RADIUS_SM};padding:0;margin:0;font-family:{FONT_TEXT};font-size:{SIZE_XS};}}QLineEdit:hover{{background:rgba(255,255,255,175);border:1px solid rgba(0,0,0,45);}}QLineEdit:focus{{background:#FFFFFF;border:1px solid rgba(0,0,0,70);}}")
-                dash = QLabel("-"); dash.setAlignment(Qt.AlignCenter); dash.setFixedSize(10, 19)
-                dash.setStyleSheet(f"QLabel{{background:transparent;border:none;padding:0;margin:0;font-family:{FONT_TEXT};font-size:{SIZE_XS};}}")
-                row.addStretch(1); row.addWidget(first_edit); row.addWidget(dash); row.addWidget(last_edit); row.addStretch(1)
-                def save_range(_path=path, _first=first_edit, _last=last_edit):
-                    total = self._page_count(_path)
-                    try: a, b = int(_first.text()), int(_last.text())
-                    except ValueError: a, b = self.page_selections.get(_path, (1, total))
-                    a = max(1, min(a, total)); b = max(a, min(b, total))
-                    self.page_selections[_path] = (a, b); self._rebuild_image_strip(); self._update_height()
-                first_edit.editingFinished.connect(save_range); last_edit.editingFinished.connect(save_range)
-            else:
-                source = QPixmap(path)
-                if source.isNull(): holder.deleteLater(); continue
-                shown = source.scaled(preview_w, cell_h - 10, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                rounded = QPixmap(shown.size()); rounded.fill(Qt.transparent)
-                painter = QPainter(rounded); painter.setRenderHint(QPainter.Antialiasing, True)
-                clip = QPainterPath(); clip.addRoundedRect(QRectF(rounded.rect()), 7, 7)
-                painter.setClipPath(clip); painter.drawPixmap(0, 0, shown); painter.end()
-                x, y = (cell_w - shown.width()) // 2, (cell_h - shown.height()) // 2
-                label = QLabel(holder); label.setPixmap(rounded); label.setGeometry(x, y, shown.width(), shown.height())
-            close = QPushButton("×", holder); close.setFixedSize(20, 20); close.move(cell_w - 22, 2)
-            close.setCursor(Qt.PointingHandCursor)
-            close.setStyleSheet(f"QPushButton{{background:{COLOR_GRAY_500};color:white;border:1px solid {COLOR_BORDER};border-radius:10px;padding:0;font-size:15px;font-weight:600;}}QPushButton:hover{{background:{COLOR_GRAY_700};}}")
-            close.clicked.connect(lambda _=False, p=path: self._remove_path(p)); holder.set_close_button(close)
-            self.image_strip_layout.addWidget(holder)
-
-        margins = self.image_strip_layout.contentsMargins(); spacing = self.image_strip_layout.spacing()
-        total_width = margins.left() + margins.right() + len(self.paths) * cell_w + max(0, len(self.paths) - 1) * spacing
-        self.image_strip.setFixedSize(max(1, total_width), 116)
-        self.image_scroll.setVisible(bool(self.paths)); self.document_area.setVisible(bool(self.paths))
-        self.image_strip.adjustSize(); self.image_scroll.viewport().updateGeometry()
-
-    def _show_document(self,index=-1):
+    def _show_document(self, index=-1):
         if not self.paths:
-            self._clear_image_strip(); self.image_scroll.hide(); self.document_area.hide(); self.status.hide(); self._update_height(); return
-        self._rebuild_image_strip(); self.status.setText("Pièces jointes prêtes"); self._update_height()
+            self._attachment_preview.show_document(index)
+            self.status.hide()
+            return
+        self._attachment_preview.show_document(index)
+        self.status.setText("Pi?ces jointes pr?tes")
+        self._update_height()
+
     def _save_page_range(self):
         return
+
     def _remove_current(self):
-        if self.paths:
-            path=self.paths.pop(); self.page_selections.pop(path,None); self._show_document(len(self.paths)-1)
+        self._attachment_preview.remove_current()
+
     def _specs(self):
         return [{"path":p,"pages":list(range(self.page_selections[p][0],self.page_selections[p][1]+1))} for p in self.paths]
 
-    def begin_response(self, question, attachments_html=""):
-        self.streaming_response_active = True
-        self.current_assistant_bubble = None
-        self.turns.append({
-            "question": question,
-            "answer": "",
-            "sources_html": "",
-            "attachments_html": attachments_html,
-            "loading": True,
-        })
-        self.current_turn_index = len(self.turns) - 1
-        self.response.show()
-        self._render_conversation()
-        self.stop_generation_button.setEnabled(True)
-        self._update_send_visibility()
-    def append_response(self,text):
-        if self.current_turn_index < 0:
-            return
-        turn = self.turns[self.current_turn_index]
-        turn["answer"] += text
-        # Dès le premier fragment, les points disparaissent. Le rendu est ensuite
-        # limité à environ 22 mises à jour par seconde pour supprimer scintillement,
-        # sauts de largeur et pertes temporaires de la barre de défilement.
-        turn["loading"] = False
-        self.pending_stream_render = True
-        if not self.stream_render_timer.isActive():
-            self.stream_render_timer.start()
+    def begin_response(self, question, attachments_html="", skill_tag=None, documents=None):
+        return self.response_controller.begin_response(
+            question, attachments_html, skill_tag, documents
+        )
+
+    def append_thinking(self, text):
+        return self.response_controller.append_thinking(text)
+
+    def append_response(self, text):
+        return self.response_controller.append_response(text)
 
     def _flush_stream_render(self):
-        if not self.pending_stream_render:
-            return
-        self.pending_stream_render = False
-        if self.current_turn_index < 0:
-            return
-        turn = self.turns[self.current_turn_index]
-        answer = self._answer_without_sources(turn.get("answer", ""))
-        rendered = (
-            self.host.markdown_to_html(answer)
-            if self.host is not None
-            else html.escape(answer).replace("\n", "<br>")
-        )
-        try:
-            bubble_is_valid = (
-                self.current_assistant_bubble is not None
-                and self.current_assistant_bubble.parent() is not None
-            )
-        except RuntimeError:
-            bubble_is_valid = False
-        if not bubble_is_valid:
-            # Premier fragment uniquement : remplace les points par la bulle.
-            self._render_conversation()
-        else:
-            # Fragments suivants : mise à jour du QTextBrowser existant, sans
-            # supprimer ni recréer les widgets de la conversation.
-            self.current_assistant_bubble.set_html(
-                rendered + turn.get("sources_html", "")
-            )
-            self.conversation_layout.activate()
-            self.conversation_widget.adjustSize()
-            self._scroll_to_bottom()
+        return self.response_controller._flush_stream_render()
 
     def _on_tool_widget_toggled(self):
-        self.conversation_layout.activate()
-        self.conversation_widget.adjustSize()
-        self._update_height()
-        self._scroll_to_bottom()
+        return self.response_controller._on_tool_widget_toggled()
+
+    def _finish_toggle_layout(self, scroll_bar, previous_value):
+        return self.response_controller._finish_toggle_layout(
+            scroll_bar, previous_value
+        )
 
     def record_tool_event(self, phase: str, name: str, detail: str):
-        """Enregistre et met à jour l'événement d'outil dans la conversation."""
-        if self.current_turn_index < 0 and self.turns:
-            self.current_turn_index = len(self.turns) - 1
-        if self.current_turn_index < 0:
-            return
-        turn = self.turns[self.current_turn_index]
-        tools = turn.setdefault("tools", [])
-
-        if phase == "appel":
-            tools.append({
-                "name": name,
-                "status": "running",
-                "arguments": detail or "",
-                "result": "",
-                "expanded": False,
-            })
-        elif phase == "résultat":
-            for t in reversed(tools):
-                if t.get("name") == name or t.get("status") == "running":
-                    t["status"] = "done"
-                    if detail:
-                        t["result"] = detail
-                    break
-            else:
-                tools.append({
-                    "name": name,
-                    "status": "done",
-                    "arguments": "",
-                    "result": detail or "",
-                    "expanded": False,
-                })
-        elif phase == "erreur":
-            for t in reversed(tools):
-                if t.get("name") == name or t.get("status") == "running":
-                    t["status"] = "error"
-                    if detail:
-                        t["result"] = detail
-                    break
-            else:
-                tools.append({
-                    "name": name,
-                    "status": "error",
-                    "arguments": "",
-                    "result": detail or "",
-                    "expanded": False,
-                })
-
-        self._render_conversation()
+        return self.response_controller.record_tool_event(phase, name, detail)
 
     def finish_response(self):
-        self.streaming_response_active = False
-        self.stream_render_timer.stop()
-        self.pending_stream_render = False
-        if self.current_turn_index >= 0:
-            self.turns[self.current_turn_index]["loading"] = False
-            for t in self.turns[self.current_turn_index].get("tools", []):
-                if t.get("status") == "running":
-                    t["status"] = "done"
-        self.status.clear()
-        self.status.hide()
-        self.stop_generation_button.setEnabled(True)
-        self._update_send_visibility()
-        self._render_conversation()
-    def show_error(self,message):
-        self.streaming_response_active = False
-        if self.current_turn_index>=0:
-            self.turns[self.current_turn_index]["loading"]=False; self.turns[self.current_turn_index]["answer"] += f"\n\n⚠️ {message}"
-        self.status.setText("Erreur d'analyse")
-        self.stop_generation_button.setEnabled(True)
-        self._update_send_visibility()
-        self._render_conversation()
+        return self.response_controller.finish_response()
 
-    def _ask_text(self):
-        question = self.question.toPlainText().strip()
-        if not question:
-            self.status.setText("Saisissez une question ou utilisez le microphone")
-            return
-        forced_tool = getattr(self, "_pending_forced_tool", None)
-        self._pending_forced_tool = None
-        documents, attachments_html = self._take_current_attachments()
-        self.begin_response(question, attachments_html)
-        self.question.clear()
-        self.ask_requested.emit(documents, question, None, forced_tool)
-    def _set_inline_recording_visual(self,active):
-        self.question.setVisible(not active)
-        # Un clic pendant la dictée termine l'enregistrement puis envoie
-        # l'audio. L'icône Envoyer correspond donc à l'action réelle.
-        self.mic.kind="send" if active else "mic"
-        self.mic.update()
-        self.audio_bars.start() if active else self.audio_bars.stop()
-        self._update_send_visibility()
-        self._update_height()
-    def _toggle_microphone(self):
-        if self.is_recording:
-            if self.audio_thread and self.audio_thread.isRunning():self.audio_thread.stop_recording()
-            self.status.setText("Traitement de la question audio..."); return
-        voice=self.host.config.get("voice_input",{}) if self.host else {}; self.is_recording=True; self._set_inline_recording_visual(True)
-        device=self.host._selected_voice_device() if self.host else None
-        self.audio_thread=AudioRecorderThread(device,voice.get("sample_rate",16000),voice.get("maximum_duration",60.0),release_tail_ms=voice.get("release_tail_ms",700),microphone_gain=voice.get("microphone_gain",2.0),parent=self)
-        self.audio_thread.level_changed.connect(self.audio_bars.set_level); self.audio_thread.recorded.connect(self._audio_ready); self.audio_thread.error.connect(self._audio_error); self.audio_thread.start()
-    def _audio_ready(self, data, duration, rms):
-        self.is_recording = False
-        self.audio_thread = None
-        self._set_inline_recording_visual(False)
-        if not data or duration < 0.3:
-            self.status.setText("Aucun son détecté")
-            return
-        documents, attachments_html = self._take_current_attachments()
-        self.begin_response("Question audio", attachments_html)
-        self.ask_requested.emit(documents, "", data, None)
-    def _audio_error(self, message):
-        self.is_recording = False
-        self.audio_thread = None
-        self._set_inline_recording_visual(False)
-        self.status.setText(message)
+    def show_error(self, message):
+        return self.response_controller.show_error(message)
 
     def cleanup_temp_files(self):
         """Supprime les fichiers temporaires créés pour les aperçus et les captures de sources."""
@@ -1527,6 +1123,11 @@ class DocumentDialog(QDialog):
         self._temp_files.clear()
 
     def closeEvent(self, event):
+        thread = self.host.document_thread if self.host is not None else None
+        if thread is not None and thread.isRunning():
+            thread.stop()
+        self._stop_llm_generation()
+        if self.audio_thread is not None and self.audio_thread.isRunning():
+            self.audio_thread.stop_recording()
         self.cleanup_temp_files()
         super().closeEvent(event)
-

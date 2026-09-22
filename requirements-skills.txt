@@ -1,0 +1,6 @@
+# Compétences bureautiques optionnelles
+pandas
+python-docx
+openpyxl
+reportlab
+python-pptx

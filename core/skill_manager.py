@@ -6,13 +6,23 @@ import inspect
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypedDict
 
 LOGGER = logging.getLogger(__name__)
 
 
 class SkillError(Exception):
     """Erreur liée au chargement ou à l'exécution d'un skill."""
+
+
+class ToolDefinition(TypedDict, total=False):
+    """Contrat d'un outil exposé au modèle ou exécuté par un skill."""
+
+    name: str
+    skill: str
+    description: str
+    function: Any
+    parameters: Dict[str, Any]
 
 
 class SkillManager:
@@ -115,6 +125,18 @@ class SkillManager:
             return self.skills[skill_name.strip().lower()]
         except KeyError as exc:
             raise SkillError(f"Skill inconnu : {skill_name}") from exc
+
+    def get_skill_icon(self, skill_name: str) -> Optional[str]:
+        """Retourne le chemin d'une icône SVG ou PNG déclarée par un skill."""
+        skill = self.get_skill(skill_name)
+        icon = getattr(skill, "icon", None)
+        if not icon:
+            return None
+
+        icon_path = Path(str(icon)).expanduser()
+        if not icon_path.is_absolute():
+            icon_path = self.skills_directory / skill_name.strip().lower() / icon_path
+        return str(icon_path.resolve())
 
     def get_tool(self, tool_name: str) -> Dict[str, Any]:
         try:

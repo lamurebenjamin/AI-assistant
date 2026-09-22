@@ -3,11 +3,11 @@
 
 import subprocess
 import sys
-from PyQt5.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 
 class NvidiaStatusThread(QThread):
-    status_checked = pyqtSignal(bool, str, str)
+    status_checked = Signal(bool, str, str)
 
     def run(self):
         try:

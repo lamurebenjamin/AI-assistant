@@ -6,9 +6,9 @@ import json
 import os
 import sys
 import sounddevice as sd
-from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal
-from PyQt5.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPalette
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import QEvent, Qt, QTimer, QSize, Signal
+from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPalette
+from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
@@ -16,14 +16,13 @@ from PyQt5.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QProgressBar,
     QPushButton,
-    QTabWidget,
+    QSizePolicy,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -31,25 +30,15 @@ from PyQt5.QtWidgets import (
 
 from src.config.schema import APP_DIR, DEFAULT_CONFIG, LOGGER
 from src.config.manager import save_config
-from src.ui.design_tokens import (
-    COLOR_BG_PAGE,
-    COLOR_BG_SURFACE,
-    COLOR_BORDER,
-    COLOR_BORDER_SUBTLE,
-    COLOR_PRIMARY,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    FONT_TEXT,
-    RADIUS_LG,
-    RADIUS_MD,
-    SIZE_LG,
-    SIZE_MD,
-    is_dark_theme,
-)
-from src.ui.icons import ICONS, ICONS_DARK, get_logo_pixmap
-from src.ui.stylesheet import build_settings_qss
+import src.ui.design_tokens as t
+from src.ui.icons import ICONS, ICONS_DARK
+from src.ui.stylesheet import build_settings_qss, qss_ctrl9_preview, qss_settings_emphasis
+from src.ui.windows.settings_tabs import SettingsTabsBuilder
 from src.ui.theme import apply_app_theme, apply_rounded_corners
 from src.ui.widgets.animated_buttons import AnimatedHeaderButton
+from src.ui.widgets.hairline import HairlineSeparator
+from src.ui.widgets.status_label import StatusLabel
+from src.ui.widgets.window_chrome import WindowChrome
 from src.audio.recorder import AudioRecorderThread
 from src.monitoring.server_status import ServerStatusThread
 from src.monitoring.nvidia_status import NvidiaStatusThread
@@ -104,43 +93,18 @@ class SettingsDialog(QDialog):
         panel_layout.setContentsMargins(0, 0, 0, 0)
         panel_layout.setSpacing(0)
 
-        self.header = QFrame(self.panel)
-        self.header.setObjectName("Header")
-        self.header.setFixedHeight(36)
+        self.header = WindowChrome("Paramètres", self.panel)
         self.header.setMouseTracking(True)
         self.header.installEventFilter(self)
-        header = self.header
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(9, 1, 3, 0)
-        header_layout.setSpacing(3)
-        header_layout.setAlignment(Qt.AlignVCenter)
+        self.header_icon_label = self.header.icon_label
+        self.close_btn = AnimatedHeaderButton(ICONS_DARK["close"], "Fermer", self.header)
+        self.close_btn.setIconSize(QSize(t.ICON_SIZE_CLOSE, t.ICON_SIZE_CLOSE))
+        self.close_btn.clicked.connect(self.reject)
+        self.header.add_action(self.close_btn)
+        panel_layout.addWidget(self.header)
 
-        self.header_icon_label = QLabel(header)
-        self.header_icon_label.setFixedSize(18, 18)
-        self.header_icon_label.setAlignment(Qt.AlignCenter)
-        self.header_icon_label.setPixmap(get_logo_pixmap(16, APP_DIR))
-        header_layout.addWidget(self.header_icon_label, 0, Qt.AlignVCenter)
-
-        title_label = QLabel("Paramètres", header)
-        title_label.setObjectName("TitleLabel")
-        title_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        title_label.setTextFormat(Qt.PlainText)
-        header_layout.addWidget(title_label, 1)
-
-        close_btn = AnimatedHeaderButton(ICONS_DARK["close"], "Fermer", header)
-        close_btn.clicked.connect(self.reject)
-        header_layout.addWidget(close_btn, 0, Qt.AlignVCenter)
-        panel_layout.addWidget(header)
-
-        self.separator_wrapper = QWidget(self.panel)
-        sep_layout = QHBoxLayout(self.separator_wrapper)
-        sep_layout.setContentsMargins(12, 0, 12, 0)
-        sep_layout.setSpacing(0)
-        self.separator = QFrame(self.separator_wrapper)
-        self.separator.setFixedHeight(1)
-        sep_bg = "rgba(255,255,255,25)" if is_dark_theme() else "rgba(0,0,0,35)"
-        self.separator.setStyleSheet(f"background: {sep_bg}; border: none;")
-        sep_layout.addWidget(self.separator)
+        self.separator_wrapper = HairlineSeparator(self.panel)
+        self.separator = self.separator_wrapper.line
         panel_layout.addWidget(self.separator_wrapper)
 
         self.content_widget = QWidget(self.panel)
@@ -149,69 +113,17 @@ class SettingsDialog(QDialog):
         self.content_widget.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         self.content_widget.setAttribute(Qt.WA_NoSystemBackground, False)
         self.content_widget.setAutoFillBackground(True)
-        self.content_widget.setStyleSheet(f"QWidget#SettingsContent {{ background-color: {COLOR_BG_PAGE}; }}")
+        self.content_widget.setStyleSheet("")
         content_layout = QVBoxLayout(self.content_widget)
         content_layout.setContentsMargins(22, 18, 22, 18)
         content_layout.setSpacing(12)
 
         # Organisation des paramètres par domaine fonctionnel.
-        self.settings_tabs = QTabWidget(self.content_widget)
-        self.settings_tabs.setDocumentMode(True)
-
-        llm_tab = QWidget()
-        llm_layout = QVBoxLayout(llm_tab)
-        llm_layout.setContentsMargins(10, 12, 10, 10)
-        llm_layout.setSpacing(12)
-
-        voice_tab = QWidget()
-        voice_layout = QVBoxLayout(voice_tab)
-        voice_layout.setContentsMargins(10, 12, 10, 10)
-        voice_layout.setSpacing(12)
-
-        shortcuts_tab = QWidget()
-        shortcuts_layout = QVBoxLayout(shortcuts_tab)
-        shortcuts_layout.setContentsMargins(10, 12, 10, 10)
-        shortcuts_layout.setSpacing(12)
-
-        appearance_tab = QWidget()
-        appearance_layout = QVBoxLayout(appearance_tab)
-        appearance_layout.setContentsMargins(16, 16, 16, 16)
-        appearance_layout.setSpacing(16)
-
-        theme_box = QGroupBox("Thème de l'application", appearance_tab)
-        theme_box_layout = QVBoxLayout(theme_box)
-        theme_box_layout.setContentsMargins(14, 14, 14, 14)
-        theme_box_layout.setSpacing(10)
-
-        theme_row = QHBoxLayout()
-        theme_lbl = QLabel("Mode d'affichage :", theme_box)
-        theme_lbl.setStyleSheet("font-weight: 600;")
-        self.theme_combo = QComboBox(theme_box)
-        self.theme_combo.addItem("🌙 Sombre (Antigravity)", "dark")
-        self.theme_combo.addItem("☀️ Clair", "light")
-        current_t = self.config.get("theme", "dark")
-        self.theme_combo.setCurrentIndex(0 if current_t == "dark" else 1)
-        self.theme_combo.currentIndexChanged.connect(self._on_theme_preview_changed)
-        theme_row.addWidget(theme_lbl)
-        theme_row.addWidget(self.theme_combo, 1)
-        theme_box_layout.addLayout(theme_row)
-
-        theme_desc = QLabel(
-            "Le mode sombre reproduit fidèlement la charte graphique et les contrastes de Google Antigravity "
-            "(fond #1E1E1E, surfaces #252526, accents bleus #0078D4/#58A6FF et icônes claires).",
-            theme_box,
-        )
-        theme_desc.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
-        theme_desc.setWordWrap(True)
-        theme_box_layout.addWidget(theme_desc)
-
-        appearance_layout.addWidget(theme_box)
-        appearance_layout.addStretch(1)
-
-        self.settings_tabs.addTab(llm_tab, "LLM")
-        self.settings_tabs.addTab(voice_tab, "Assistant vocal")
-        self.settings_tabs.addTab(shortcuts_tab, "Raccourcis")
-        self.settings_tabs.addTab(appearance_tab, "Apparence")
+        tabs = SettingsTabsBuilder(self).build()
+        self.settings_tabs = tabs.widget
+        llm_layout = tabs.llm_layout
+        voice_layout = tabs.voice_layout
+        shortcuts_layout = tabs.shortcuts_layout
         content_layout.addWidget(self.settings_tabs, 1)
 
         # URL, état du serveur et modèle affichés sur trois lignes distinctes.
@@ -223,35 +135,30 @@ class SettingsDialog(QDialog):
         model_line_layout.setSpacing(8)
 
         api_label = QLabel("URL API llama.cpp")
-        api_label.setStyleSheet("font-weight: bold;")
+        api_label.setStyleSheet(qss_settings_emphasis(bold=True))
 
         self.api_input = QLineEdit(self.temp_api_url)
-        self.api_input.setFixedHeight(34)
+        self.api_input.setFixedHeight(t.INPUT_HEIGHT)
         self.api_input.setMinimumWidth(250)
         self.api_input.textChanged.connect(self.schedule_server_status_check)
 
-        status_title = QLabel("État du serveur :")
-        status_title.setStyleSheet("font-weight: 600; color: #303640;")
-        status_title.setSizePolicy(status_title.sizePolicy().Fixed, status_title.sizePolicy().Preferred)
+        status_title = StatusLabel("État du serveur :", tone="title", weight=600)
+        status_title.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
 
-        self.server_status_label = QLabel("")
-        self.server_status_label.setStyleSheet("color: #C47F00; font-weight: 600;")
+        self.server_status_label = StatusLabel("", tone="warning", weight=600)
         self.server_status_label.setSizePolicy(
-            self.server_status_label.sizePolicy().Fixed,
-            self.server_status_label.sizePolicy().Preferred
+            QSizePolicy.Fixed,
+            QSizePolicy.Preferred
         )
 
-        self.server_status_detail = QLabel("")
-        self.server_status_detail.setStyleSheet("color: #69717D;")
+        self.server_status_detail = StatusLabel("", tone="muted", weight=400)
         self.server_status_detail.setSizePolicy(
-            self.server_status_detail.sizePolicy().Fixed,
-            self.server_status_detail.sizePolicy().Preferred
+            QSizePolicy.Fixed,
+            QSizePolicy.Preferred
         )
 
-        model_title = QLabel("Modèle LLM :")
-        model_title.setStyleSheet("font-weight: 600; color: #303640;")
-        self.server_model_label = QLabel("INDISPONIBLE")
-        self.server_model_label.setStyleSheet("color: #2563B8; font-weight: 600;")
+        model_title = StatusLabel("Modèle LLM :", tone="title", weight=600)
+        self.server_model_label = StatusLabel("INDISPONIBLE", tone="info", weight=600)
         self.server_model_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.server_model_label.setToolTip("Modèle déclaré par l'endpoint /v1/models")
 
@@ -270,9 +177,9 @@ class SettingsDialog(QDialog):
         model_line_layout.addStretch(1)
         llm_layout.addLayout(model_line_layout)
 
-        server_box = QFrame()
-        server_box.setStyleSheet(f"QFrame {{ background: {COLOR_BG_SURFACE}; border: 1px solid {COLOR_BORDER_SUBTLE}; border-radius: {RADIUS_LG}; }}")
-        server_form = QFormLayout(server_box)
+        self.server_box = QFrame()
+        self.server_box.setObjectName("SettingsCard")
+        server_form = QFormLayout(self.server_box)
         server_form.setContentsMargins(12, 10, 12, 10)
         server_form.setSpacing(8)
         self.server_exe_input = QLineEdit(self.temp_server_config.get('executable', 'llama-server.exe'))
@@ -288,7 +195,11 @@ class SettingsDialog(QDialog):
         model_row = QHBoxLayout(); model_row.addWidget(self.server_model_input, 1)
         model_btn = QPushButton("Parcourir"); model_btn.clicked.connect(self.browse_server_model); model_row.addWidget(model_btn)
         process_row = QHBoxLayout()
-        self.server_process_status = QLabel("PROCESSUS DÉMARRÉ" if LLAMA_SERVER_MANAGER.is_running() else "PROCESSUS ARRÊTÉ")
+        self.server_process_status = StatusLabel(
+            "PROCESSUS DÉMARRÉ" if LLAMA_SERVER_MANAGER.is_running() else "PROCESSUS ARRÊTÉ",
+            tone="success" if LLAMA_SERVER_MANAGER.is_running() else "muted",
+            weight=700,
+        )
         process_row.addWidget(self.server_process_status, 1)
         start_btn = QPushButton("Démarrer"); start_btn.clicked.connect(self.start_local_server)
         stop_btn = QPushButton("Arrêter"); stop_btn.clicked.connect(self.stop_local_server)
@@ -298,24 +209,22 @@ class SettingsDialog(QDialog):
         server_form.addRow("Arguments", self.server_args_input)
         server_form.addRow("", self.server_autostart_check)
         server_form.addRow("Processus", process_row)
-        llm_layout.addWidget(server_box)
+        llm_layout.addWidget(self.server_box)
 
         # État du GPU sur une seule ligne, sans libellé superflu.
         gpu_line_layout = QHBoxLayout()
         gpu_line_layout.setSpacing(8)
 
-        self.gpu_pstate_label = QLabel("")
-        self.gpu_pstate_label.setStyleSheet("color: #C47F00; font-weight: 700;")
-        self.gpu_detail_label = QLabel("")
-        self.gpu_detail_label.setStyleSheet("color: #69717D;")
+        self.gpu_pstate_label = StatusLabel("", tone="warning", weight=700)
+        self.gpu_detail_label = StatusLabel("", tone="muted", weight=400)
         self.gpu_detail_label.setToolTip("Nom du GPU, utilisation, VRAM et température")
         gpu_line_layout.addWidget(self.gpu_pstate_label)
         gpu_line_layout.addWidget(self.gpu_detail_label, 1)
         llm_layout.addLayout(gpu_line_layout)
 
-        voice_box = QFrame()
-        voice_box.setStyleSheet(f"QFrame {{ background: {COLOR_BG_SURFACE}; border: 1px solid {COLOR_BORDER_SUBTLE}; border-radius: {RADIUS_LG}; }}")
-        voice_form = QFormLayout(voice_box)
+        self.voice_box = QFrame()
+        self.voice_box.setObjectName("SettingsCard")
+        voice_form = QFormLayout(self.voice_box)
         voice_form.setContentsMargins(12, 10, 12, 10)
 
         self.automatic_reading_check = QCheckBox("Lire automatiquement les réponses à haute voix")
@@ -353,12 +262,12 @@ class SettingsDialog(QDialog):
         # Conserve le retour d'erreur sans afficher de rectangle supplementaire.
         self.voice_device_info = QLabel("")
         self.voice_device_info.hide()
-        voice_layout.addWidget(voice_box)
+        voice_layout.addWidget(self.voice_box)
         voice_layout.addStretch(1)
         self.refresh_audio_devices()
 
-        info_label = QLabel("Astuce : Ctrl+1 à Ctrl+9 utilisent le texte sélectionné. Ctrl+Alt+1 à Ctrl+Alt+9 utilisent la voix avec la même action.")
-        info_label.setStyleSheet("color: #5B6470; font-size: 12px; font-style: italic;")
+        info_label = QLabel("Astuce : Ctrl+1 à Ctrl+9 utilisent le texte sélectionné. Ctrl+Alt+1 à Ctrl+Alt+9 utilisent la voix avec la même action. Ctrl+0 masque/réaffiche Ctrl+9.")
+        info_label.setObjectName("SettingsHintItalic")
         info_label.setWordWrap(True)
         shortcuts_layout.addWidget(info_label)
 
@@ -371,16 +280,16 @@ class SettingsDialog(QDialog):
 
         btn_layout = QVBoxLayout()
         btn_layout.setSpacing(8)
-        btn_add = QPushButton(" Ajouter"); btn_add.setIcon(ICONS_DARK["add"]); btn_add.clicked.connect(self.add_action)
-        btn_del = QPushButton(" Supprimer"); btn_del.setIcon(ICONS_DARK["delete"]); btn_del.clicked.connect(self.del_action)
-        btn_up = QPushButton(); btn_up.setObjectName("ToolButton"); btn_up.setIcon(ICONS_DARK["up"]); btn_up.setToolTip("Monter"); btn_up.clicked.connect(lambda: self.move_action(-1))
-        btn_down = QPushButton(); btn_down.setObjectName("ToolButton"); btn_down.setIcon(ICONS_DARK["down"]); btn_down.setToolTip("Descendre"); btn_down.clicked.connect(lambda: self.move_action(1))
+        self.btn_add = QPushButton(" Ajouter"); self.btn_add.setIcon(ICONS_DARK["add"]); self.btn_add.clicked.connect(self.add_action)
+        self.btn_del = QPushButton(" Supprimer"); self.btn_del.setIcon(ICONS_DARK["delete"]); self.btn_del.clicked.connect(self.del_action)
+        self.btn_up = QPushButton(); self.btn_up.setObjectName("ToolButton"); self.btn_up.setIcon(ICONS_DARK["up"]); self.btn_up.setToolTip("Monter"); self.btn_up.clicked.connect(lambda: self.move_action(-1))
+        self.btn_down = QPushButton(); self.btn_down.setObjectName("ToolButton"); self.btn_down.setIcon(ICONS_DARK["down"]); self.btn_down.setToolTip("Descendre"); self.btn_down.clicked.connect(lambda: self.move_action(1))
 
-        btn_layout.addWidget(btn_add)
-        btn_layout.addWidget(btn_del)
+        btn_layout.addWidget(self.btn_add)
+        btn_layout.addWidget(self.btn_del)
         btn_layout.addStretch()
-        btn_layout.addWidget(btn_up)
-        btn_layout.addWidget(btn_down)
+        btn_layout.addWidget(self.btn_up)
+        btn_layout.addWidget(self.btn_down)
         actions_layout.addLayout(btn_layout, 0)
         shortcuts_layout.addLayout(actions_layout, 1)
 
@@ -389,11 +298,11 @@ class SettingsDialog(QDialog):
         form_layout.setLabelAlignment(Qt.AlignRight)
 
         self.name_input = QLineEdit()
-        self.name_input.setFixedHeight(34)
+        self.name_input.setFixedHeight(t.INPUT_HEIGHT)
         self.sys_prompt_input = QTextEdit()
         self.sys_prompt_input.setMinimumHeight(115)
         self.prefix_input = QLineEdit()
-        self.prefix_input.setFixedHeight(34)
+        self.prefix_input.setFixedHeight(t.INPUT_HEIGHT)
 
         self.name_input.textChanged.connect(self.update_action_field)
         self.sys_prompt_input.textChanged.connect(self.update_action_field)
@@ -406,25 +315,25 @@ class SettingsDialog(QDialog):
 
         bottom_layout = QHBoxLayout()
         bottom_layout.addStretch()
-        btn_cancel = QPushButton("Annuler")
-        btn_cancel.setObjectName("CancelBtn")
-        btn_cancel.setIcon(ICONS_DARK["cancel"])
-        btn_cancel.setIconSize(QSize(16, 16))
-        btn_cancel.setMinimumHeight(38)
-        btn_cancel.setCursor(Qt.PointingHandCursor)
-        btn_cancel.clicked.connect(self.reject)
+        self.btn_cancel = QPushButton("Annuler")
+        self.btn_cancel.setObjectName("CancelBtn")
+        self.btn_cancel.setIcon(ICONS_DARK["cancel"])
+        self.btn_cancel.setIconSize(QSize(t.ICON_SIZE_DIALOG, t.ICON_SIZE_DIALOG))
+        self.btn_cancel.setMinimumHeight(38)
+        self.btn_cancel.setCursor(Qt.PointingHandCursor)
+        self.btn_cancel.clicked.connect(self.reject)
 
-        btn_save = QPushButton("Sauvegarder")
-        btn_save.setObjectName("SaveBtn")
-        btn_save.setIcon(ICONS["save"])
-        btn_save.setIconSize(QSize(16, 16))
-        btn_save.setMinimumHeight(38)
-        btn_save.setCursor(Qt.PointingHandCursor)
-        btn_save.setDefault(True)
-        btn_save.clicked.connect(self.save)
+        self.btn_save = QPushButton("Sauvegarder")
+        self.btn_save.setObjectName("SaveBtn")
+        self.btn_save.setIcon(ICONS["save"])
+        self.btn_save.setIconSize(QSize(t.ICON_SIZE_DIALOG, t.ICON_SIZE_DIALOG))
+        self.btn_save.setMinimumHeight(38)
+        self.btn_save.setCursor(Qt.PointingHandCursor)
+        self.btn_save.setDefault(True)
+        self.btn_save.clicked.connect(self.save)
 
-        bottom_layout.addWidget(btn_cancel)
-        bottom_layout.addWidget(btn_save)
+        bottom_layout.addWidget(self.btn_cancel)
+        bottom_layout.addWidget(self.btn_save)
         content_layout.addLayout(bottom_layout)
 
         panel_layout.addWidget(self.content_widget)
@@ -448,11 +357,11 @@ class SettingsDialog(QDialog):
         # natif est utilisé afin d'éviter les traces de repeinture et les widgets
         # dupliqués visuellement pendant le glissement.
         if watched is self.header:
-            if event.type() == event.MouseButtonDblClick:
+            if event.type() == QEvent.MouseButtonDblClick:
                 event.accept()
                 return True
 
-            if event.type() == event.MouseButtonPress and event.button() == Qt.LeftButton:
+            if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
                 if sys.platform == 'win32':
                     try:
                         WM_NCLBUTTONDOWN = 0x00A1
@@ -475,14 +384,14 @@ class SettingsDialog(QDialog):
 
             # Repli uniquement pour les plateformes sans déplacement natif.
             if (sys.platform != 'win32' and
-                    event.type() == event.MouseMove and
+                    event.type() == QEvent.MouseMove and
                     self.drag_position is not None and
                     event.buttons() & Qt.LeftButton):
                 self.move(event.globalPos() - self.drag_position)
                 event.accept()
                 return True
 
-            if event.type() == event.MouseButtonRelease:
+            if event.type() == QEvent.MouseButtonRelease:
                 self.drag_position = None
                 self.repaint()
                 self.panel.repaint()
@@ -587,16 +496,15 @@ class SettingsDialog(QDialog):
                 description = descriptions.get(state, "état de performance NVIDIA")
                 displayed_states.append(f"{state} ({description})")
             self.gpu_pstate_label.setText("● " + " / ".join(displayed_states))
-            color = "#16833B" if any(
+            high = any(
                 state.strip() in ("P0", "P1", "P2") for state in pstate.split("/")
-            ) else "#2563B8"
-            self.gpu_pstate_label.setStyleSheet(f"color: {color}; font-weight: 700;")
+            )
+            self.gpu_pstate_label.set_tone("success" if high else "info", weight=700)
             self.gpu_detail_label.setText(detail)
             self.gpu_detail_label.setToolTip(detail)
         else:
-            # Aucun texte temporaire ou message technique de vérification.
             self.gpu_pstate_label.setText("● INDISPONIBLE")
-            self.gpu_pstate_label.setStyleSheet("color: #69717D; font-weight: 700;")
+            self.gpu_pstate_label.set_tone("muted", weight=700)
             self.gpu_detail_label.setText("")
             self.gpu_detail_label.setToolTip("")
 
@@ -624,10 +532,10 @@ class SettingsDialog(QDialog):
     def update_server_status(self, online, detail, model_name):
         if online:
             self.server_status_label.setText("● EN LIGNE")
-            self.server_status_label.setStyleSheet("color: #16833B; font-weight: 700;")
+            self.server_status_label.set_tone("success", weight=700)
         else:
             self.server_status_label.setText("● HORS LIGNE")
-            self.server_status_label.setStyleSheet("color: #C62828; font-weight: 700;")
+            self.server_status_label.set_tone("danger", weight=700)
         # Ne pas afficher les messages techniques tels que « ok »,
         # « Vérification... » ou « Délai de réponse dépassé ».
         self.server_status_detail.setText("")
@@ -711,14 +619,14 @@ class SettingsDialog(QDialog):
         runtime = dict(self.config); runtime['llama_server'] = self.collect_server_config()
         ok, message = LLAMA_SERVER_MANAGER.start(runtime)
         self.server_process_status.setText("PROCESSUS DÉMARRÉ" if ok else "ÉCHEC DU DÉMARRAGE")
-        self.server_process_status.setStyleSheet("font-weight:700;color:#16833B;" if ok else "font-weight:700;color:#C62828;")
+        self.server_process_status.set_tone("success" if ok else "danger", weight=700)
         self.server_process_status.setToolTip(message)
         QTimer.singleShot(800, self.refresh_runtime_status)
 
     def stop_local_server(self):
         ok, message = LLAMA_SERVER_MANAGER.stop()
         self.server_process_status.setText("PROCESSUS ARRÊTÉ" if ok else "ÉCHEC DE L'ARRÊT")
-        self.server_process_status.setStyleSheet("font-weight:700;color:#69717D;" if ok else "font-weight:700;color:#C62828;")
+        self.server_process_status.set_tone("muted" if ok else "danger", weight=700)
         self.server_process_status.setToolTip(message)
         QTimer.singleShot(250, self.refresh_runtime_status)
 
@@ -764,13 +672,33 @@ class SettingsDialog(QDialog):
         app = QApplication.instance()
         if app:
             apply_app_theme(app, new_theme)
+        else:
+            self.refresh_theme()
+
+    def refresh_theme(self) -> None:
         self.setStyleSheet(build_settings_qss())
-        if hasattr(self, 'content_widget'):
-            from src.ui.design_tokens import COLOR_BG_PAGE
-            self.content_widget.setStyleSheet(f"QWidget#SettingsContent {{ background-color: {COLOR_BG_PAGE}; }}")
-        if hasattr(self, 'separator'):
-            sep_bg = "rgba(255,255,255,25)" if is_dark_theme() else "rgba(0,0,0,35)"
-            self.separator.setStyleSheet(f"background: {sep_bg}; border: none;")
+        if hasattr(self, "separator_wrapper"):
+            self.separator_wrapper.refresh_theme()
+        if hasattr(self, "header"):
+            self.header.refresh_logo()
+        for label in self.findChildren(StatusLabel):
+            label.refresh_theme()
+        if hasattr(self, "close_btn"):
+            self.close_btn.setIcon(ICONS_DARK["close"])
+        if hasattr(self, "btn_add"):
+            self.btn_add.setIcon(ICONS_DARK["add"])
+            self.btn_del.setIcon(ICONS_DARK["delete"])
+            self.btn_up.setIcon(ICONS_DARK["up"])
+            self.btn_down.setIcon(ICONS_DARK["down"])
+        if hasattr(self, "btn_cancel"):
+            self.btn_cancel.setIcon(ICONS_DARK["cancel"])
+            self.btn_save.setIcon(ICONS["save"])
+        if hasattr(self, "ctrl9_font_size_spin"):
+            self._refresh_ctrl9_preview(self.ctrl9_font_size_spin.value())
+
+    def _refresh_ctrl9_preview(self, val=None):
+        size = int(val if val is not None else self.ctrl9_font_size_spin.value())
+        self.ctrl9_preview_label.setStyleSheet(qss_ctrl9_preview(size))
 
     def save(self):
         selected = self.voice_device_combo.currentData()
@@ -789,6 +717,12 @@ class SettingsDialog(QDialog):
             app = QApplication.instance()
             if app:
                 apply_app_theme(app, chosen_theme)
+        if hasattr(self, 'ctrl9_width_spin'):
+            self.config['ctrl9'] = {
+                'width': self.ctrl9_width_spin.value(),
+                'max_height': self.ctrl9_max_height_spin.value(),
+                'font_size': self.ctrl9_font_size_spin.value(),
+            }
         save_config(self.config)
         self.accept()
 
@@ -800,5 +734,3 @@ from src.audio.recorder import AudioRecorderThread
 
 from src.ui.widgets.audio_bars import LiveAudioIndicator, ScrollingAudioBars
 from src.ui.widgets.recording_indicator import RecordingIndicator
-
-

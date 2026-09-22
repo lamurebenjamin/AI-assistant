@@ -2,15 +2,16 @@
     "theme": "light",
     "hotkeys_enabled": true,
     "api_url": "http://127.0.0.1:8080/v1/chat/completions",
+    "llm_max_tokens": 8192,
     "llama_server": {
         "auto_start": true,
         "executable": "llama-server.exe",
-        "model": "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf",
+        "model": "./llm/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf",
         "arguments": [
             "--mmproj",
-            "mmproj-F16.gguf",
+            "./llm/mmproj-F16.gguf",
             "--spec-draft-model",
-            "mtp-gemma-4-E2B-it.gguf",
+            "./llm/mtp-gemma-4-E2B-it.gguf",
             "--spec-type",
             "draft-mtp",
             "--spec-draft-n-max",
@@ -18,7 +19,9 @@
             "--n-gpu-layers",
             "999",
             "--ctx-size",
-            "16384",
+            "32768",
+            "--predict",
+            "8192",
             "--port",
             "8080",
             "--flash-attn",
@@ -35,7 +38,7 @@
             "--spec-draft-type-v",
             "q8_0",
             "--reasoning-budget",
-            "0",
+            "256",
             "-b",
             "512",
             "--temp",
@@ -72,7 +75,7 @@
         "release_tail_ms": 700,
         "microphone_gain": 1.5,
         "language": "fr",
-        "vocabulary_prompt": "La transcription est en français, dans un contexte d’ingénierie aéronautique. Respecter l’orthographe, les acronymes et les noms propres suivants. Entreprise et personnes : Safran, Safran Landing Systems, Kevin, Valentin, Remplacer systématiquement « Val » par « Valentin », Aymeric, Benjamin, Jean-Pierre, Thomas, remplace « Alex »  Alexia, Florian, Claire, Olivier, Pierre, Marion, Enguerran. Mécanique : éléments finis, rigidité, fatigue, endommagement, dimensionnement, plan, DR, DRC, EDES, RJS, RDAS. 3D Roue et frein : roue, frein, tube de couple, couronne hydraulique, pneu, puits de chaleur. Logiciels et formats : CATIA, Smarteam, PLM, ANSYS, Python, Excel, PowerPoint, fichier STEP, fichier CSV, fichier CatPart, fichier CatProduct. Programmes et aéronefs : ATL2, ATL 2, Falcon 2000, Falcon 2000EX, Falcon 900, Falcon 900EX, Rafale Air, Rafale B/C, remplacer systématiquement « Rafale BC » par « Rafale B/C », remplacer systématiquement « Rafale R » par « Rafale Air », Rafale Marine, Mirage 2000, Mirage F1, Remplace systématiquement « riche » par « REACh ». Unités techniques possibles : millimètre, mégapascal, MPa, newton, kilonewton, degré Celsius.",
+        "vocabulary_prompt": "La transcription est en français, dans un contexte d’ingénierie aéronautique. Respecter l’orthographe, les acronymes et les noms propres suivants. Entreprise et personnes : Safran, Safran Landing Systems, Kevin, Valentin, Remplacer systématiquement « Val » par « Valentin », Aymeric, Benjamin, Jean-Pierre, Thomas, remplace « Alex »  Alexia, Florian, Claire, Olivier, Pierre, Marion, Enguerran. Mécanique : éléments finis, rigidité, fatigue, endommagement, dimensionnement, plan, DR, DRC, FTNC, EDES, RJS, RDAS. 3D Roue et frein : roue, frein, tube de couple, couronne hydraulique, pneu, puits de chaleur. Logiciels et formats : CATIA, Smarteam, PLM, ANSYS, Python, Excel, PowerPoint, fichier STEP, fichier CSV, fichier CatPart, fichier CatProduct. Programmes et aéronefs : ATL2, ATL 2, Falcon 2000, Falcon 2000EX, Falcon 900, Falcon 900EX, Rafale Air, Rafale B/C, remplacer systématiquement « Rafale BC » par « Rafale B/C », remplacer systématiquement « Rafale R » par « Rafale Air », Rafale Marine, Mirage 2000, Mirage F1, Remplace systématiquement « riche » par « REACh ». Unités techniques possibles : millimètre, mégapascal, MPa, newton, kilonewton, degré Celsius.",
         "channels": 1
     },
     "actions": [
@@ -116,5 +119,10 @@
             "system_prompt": "Tu es un agent IA local. Tu peux répondre normalement, mais tu peux aussi utiliser les outils qui te sont fournis. Utilise un outil lorsque la demande nécessite réellement une action, par exemple créer un fichier. Ne simule jamais l'exécution d'un outil : si un outil est nécessaire, appelle-le. Après l'exécution, explique brièvement le résultat à l'utilisateur. Réponds en français sauf demande contraire.",
             "prompt_prefix": ""
         }
-    ]
+    ],
+    "ctrl9": {
+        "width": 450,
+        "max_height": 620,
+        "font_size": 12
+    }
 }

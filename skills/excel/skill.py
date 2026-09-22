@@ -7,6 +7,7 @@ class ExcelSkill:
     """Skill de création de classeurs Microsoft Excel."""
 
     name = "excel"
+    icon = "icon.svg"
 
     def get_tools(self):
         return [

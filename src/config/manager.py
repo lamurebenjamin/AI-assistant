@@ -7,11 +7,15 @@ import os
 import re
 from typing import Optional
 
-from src.config.schema import CONFIG_FILE, DEFAULT_CONFIG, LOGGER
+from src.config.schema import AssistantConfig, CONFIG_FILE, DEFAULT_CONFIG, LOGGER
 
 
-def load_config(path: Optional[str] = None) -> dict:
-    """Charge et normalise la configuration sans bloquer le démarrage."""
+def load_config(path: Optional[str] = None) -> AssistantConfig:
+    """Charge une configuration normalisée ou retourne les valeurs par défaut.
+
+    Les fichiers absents, invalides ou partiellement obsolètes sont tolérés :
+    les valeurs sont migrées, bornées et complétées avant d'être retournées.
+    """
     target_path = path or CONFIG_FILE
     config = copy.deepcopy(DEFAULT_CONFIG)
     if not os.path.exists(target_path):
@@ -24,6 +28,10 @@ def load_config(path: Optional[str] = None) -> dict:
             raise ValueError("La racine de la configuration doit être un objet JSON")
 
         config["hotkeys_enabled"] = bool(loaded.get("hotkeys_enabled", True))
+        try:
+            config["llm_max_tokens"] = max(1024, min(32768, int(loaded.get("llm_max_tokens", config["llm_max_tokens"]))))
+        except (TypeError, ValueError):
+            config["llm_max_tokens"] = DEFAULT_CONFIG["llm_max_tokens"]
 
         loaded_tts = loaded.get("text_to_speech")
         if isinstance(loaded_tts, dict):
@@ -83,6 +91,8 @@ def load_config(path: Optional[str] = None) -> dict:
                     i += 1
                 continue
             deduped_args.append(server["arguments"][i])
+            if arg.startswith("-") and not arg.startswith("--"):
+                seen_flags.add(arg)
             i += 1
 
         # Assurer que --jinja est présent une seule fois
@@ -156,14 +166,36 @@ def load_config(path: Optional[str] = None) -> dict:
         # Ajoute automatiquement l'action Agent si absente
         if not any(str(action.get("name", "")).strip().casefold() == "agent" for action in config["actions"]):
             config["actions"].append(copy.deepcopy(DEFAULT_CONFIG["actions"][-1]))
+
+        loaded_ctrl9 = loaded.get("ctrl9")
+        if isinstance(loaded_ctrl9, dict):
+            config["ctrl9"].update(loaded_ctrl9)
+        ctrl9 = config["ctrl9"]
+        try:
+            ctrl9["width"] = max(360, min(1200, int(ctrl9.get("width", 480))))
+        except (TypeError, ValueError):
+            ctrl9["width"] = DEFAULT_CONFIG["ctrl9"]["width"]
+        try:
+            ctrl9["max_height"] = max(350, min(1400, int(ctrl9.get("max_height", 620))))
+        except (TypeError, ValueError):
+            ctrl9["max_height"] = DEFAULT_CONFIG["ctrl9"]["max_height"]
+        try:
+            ctrl9["font_size"] = max(10, min(24, int(ctrl9.get("font_size", 14))))
+        except (TypeError, ValueError):
+            ctrl9["font_size"] = DEFAULT_CONFIG["ctrl9"]["font_size"]
+
         return config
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError) as error:
         LOGGER.warning("Configuration ignorée (%s): %s", target_path, error)
         return copy.deepcopy(DEFAULT_CONFIG)
 
 
-def save_config(config: dict, path: Optional[str] = None) -> None:
-    """Enregistre la configuration de façon atomique."""
+def save_config(config: AssistantConfig, path: Optional[str] = None) -> None:
+    """Enregistre une configuration de façon atomique.
+
+    Lève ``OSError`` pour les erreurs de fichier et ``TypeError``/``ValueError``
+    si la structure fournie n'est pas sérialisable en JSON.
+    """
     target_path = path or CONFIG_FILE
     temporary_file = target_path + ".tmp"
     try:

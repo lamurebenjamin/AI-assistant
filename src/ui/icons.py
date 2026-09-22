@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Générateur et registre central des icônes SVG de l'application.
+"""Générateur et registre central des icônes de l'application.
 
-Toutes les icônes sont générées dynamiquement via ``create_svg_icon``
+Les icônes vectorielles sont générées dynamiquement via ``create_svg_icon``
 après la création de ``QApplication``. Les deux dicts ``ICONS`` (blanc,
 fond sombre) et ``ICONS_DARK`` (noir, fond clair) sont synchronisés
 et contiennent exactement les mêmes clés.
@@ -12,10 +12,11 @@ Utiliser ``get_logo_pixmap(size)`` pour obtenir un ``QPixmap`` prêt à l'emploi
 """
 
 import os
+import re
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIcon, QPainter, QPixmap
-from PyQt5.QtSvg import QSvgRenderer
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 
 # ── Registres d'icônes ────────────────────────────────────────────────────────
 ICONS: dict = {}
@@ -32,12 +33,19 @@ ICON_LOGO_SVG = (
 )
 
 
-def create_svg_icon(svg_path: str, color: str = "#FFFFFF", stroke_width: float = 2) -> QIcon:
+def create_svg_icon(svg_path: str, color: str | None = None, stroke_width: float | None = None) -> QIcon:
     """Génère un QIcon à partir d'un chemin SVG avec couleur et épaisseur personnalisables."""
+    from src.ui.design_tokens import COLOR_TEXT_ACTIVE, ICON_STROKE_WIDTH
+
+    if color is None:
+        color = COLOR_TEXT_ACTIVE
+    if stroke_width is None:
+        stroke_width = ICON_STROKE_WIDTH
+    path = svg_path.replace('fill="theme"', f'fill="{color}"')
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" '
         f'fill="none" stroke="{color}" stroke-width="{stroke_width}" '
-        f'stroke-linecap="round" stroke-linejoin="round">{svg_path}</svg>'
+        f'stroke-linecap="round" stroke-linejoin="round">{path}</svg>'
     )
     renderer = QSvgRenderer(svg.encode("utf-8"))
     pixmap = QPixmap(24, 24)
@@ -70,7 +78,9 @@ def get_logo_pixmap(size: int = 16, app_dir: str = "") -> QPixmap:
                 size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation
             )
     # Fallback SVG
-    icon = create_svg_icon(ICON_LOGO_SVG, "#FFFFFF")
+    from src.ui.design_tokens import COLOR_TEXT_PRIMARY
+
+    icon = create_svg_icon(ICON_LOGO_SVG, COLOR_TEXT_PRIMARY)
     return icon.pixmap(size, size)
 
 
@@ -87,6 +97,90 @@ def get_app_icon(app_dir: str = "") -> QIcon:
         if not pix.isNull():
             icon.addPixmap(pix)
     return icon
+
+
+def get_file_type_icon(extension: str, size: int = 18) -> QIcon:
+    """Retourne l'icône Windows associée à une extension de fichier."""
+    extension = extension.strip().lstrip(".")
+    if os.name == "nt":
+        try:
+            import winreg
+
+            with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, f".{extension}") as extension_key:
+                file_class = winreg.QueryValue(extension_key, "")
+            with winreg.OpenKey(
+                winreg.HKEY_CLASSES_ROOT,
+                f"{file_class}\\DefaultIcon",
+            ) as icon_key:
+                icon_spec = winreg.QueryValue(icon_key, "")
+
+            match = re.match(r'^\s*"?(.+?)"?\s*(?:,\s*-?\d+)?\s*$', icon_spec)
+            if match:
+                icon = QIcon(match.group(1))
+                if not icon.isNull():
+                    return icon
+        except (OSError, ValueError):
+            pass
+
+    # Fallback pour les associations absentes ou les plateformes non-Windows.
+    from src.ui.design_tokens import COLOR_TEXT_MUTED
+
+    return create_svg_icon(
+        '<path d="M6 2h8l4 4v16H6z"/><path d="M14 2v5h5"/>',
+        COLOR_TEXT_MUTED,
+        1.6,
+    )
+
+
+def get_application_icon(application: str, size: int = 18) -> QIcon:
+    """Charge une icône locale SVG, PNG ou ICO, sinon utilise l'association Windows."""
+    value = str(application or "").strip()
+    if value:
+        icon_spec = re.match(r'^\s*"?(.+?)"?\s*(?:,\s*-?\d+)?\s*$', value)
+        path_value = icon_spec.group(1) if icon_spec else value
+        path = os.path.expandvars(os.path.expanduser(path_value))
+        if os.path.isfile(path):
+            # Les fichiers locaux sont instantanés et évitent SHGetFileInfo.
+            if path.lower().endswith(".svg"):
+                icon = _load_svg_file_icon(path)
+            elif path.lower().endswith((".ico", ".png")):
+                icon = QIcon(path)
+            else:
+                # L'extraction depuis un exécutable peut bloquer plusieurs
+                # secondes; les skills doivent donc fournir une icône locale.
+                return get_default_tool_icon()
+            if not icon.isNull():
+                return icon
+        return get_file_type_icon(value, size)
+    return get_file_type_icon("txt", size)
+
+
+def _load_svg_file_icon(path: str) -> QIcon:
+    """Charge un SVG local en conservant sa transparence et sa netteté."""
+    renderer = QSvgRenderer(path)
+    if not renderer.isValid():
+        return QIcon()
+
+    icon = QIcon()
+    for icon_size in (16, 20, 24, 32, 48, 64):
+        pixmap = QPixmap(icon_size, icon_size)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        icon.addPixmap(pixmap)
+    return icon
+
+
+def get_default_tool_icon() -> QIcon:
+    """Retourne l'icône d'outil utilisée quand un skill n'en déclare aucune."""
+    from src.ui.design_tokens import COLOR_TEXT_MUTED
+
+    return create_svg_icon(
+        '<path d="M14.7 6.3a4 4 0 0 0-5.1 5.1L3 18a2.1 2.1 0 0 0 3 3l6.6-6.6a4 4 0 0 0 5.1-5.1l-2.4 2.4-2.8-.8-.8-2.8z"/>',
+        COLOR_TEXT_MUTED,
+        1.7,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -106,7 +200,7 @@ _SVG = {
     "check":        '<path d="M5 12.5l4.2 4.2L19 7"/>',
     "close":        '<path d="M6 6l12 12M18 6L6 18"/>',
     "speak":        '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18 6a8.5 8.5 0 0 1 0 12"/>',
-    "speak_filled": '<path d="M11 5L6 9H2v6h4l5 4V5z" fill="#111111"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18 6a8.5 8.5 0 0 1 0 12"/>',
+    "speak_filled": '<path d="M11 5L6 9H2v6h4l5 4V5z" fill="theme"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18 6a8.5 8.5 0 0 1 0 12"/>',
     "stop":         '<rect x="6" y="6" width="12" height="12" rx="1"/>',
 }
 
@@ -124,12 +218,13 @@ _DARK_STROKE = {
 def update_icons_for_theme(is_dark: bool = True) -> None:
     """Met à jour les registres d'icônes selon le thème actif.
 
-    En thème sombre, ICONS_DARK reçoit des icônes claires (#E0E0E0) pour
-    que tous les modules important ICONS_DARK bénéficient d'icônes visibles
-    sur les fonds sombres d'Antigravity.
+    En thème sombre, ICONS_DARK reçoit des icônes claires (texte primaire
+    du thème sombre) pour rester lisibles sur les fonds Antigravity.
     """
-    light_color = "#E0E0E0"
-    dark_color = "#111111"
+    from src.ui.design_tokens import THEME_DARK, THEME_LIGHT
+
+    light_color = THEME_DARK["COLOR_TEXT_PRIMARY"]
+    dark_color = THEME_LIGHT["COLOR_TEXT_PRIMARY"]
 
     light = {
         key: create_svg_icon(path, light_color, _DARK_STROKE.get(key, 1.8))
@@ -153,4 +248,3 @@ def initialize_icons(is_dark: bool = True) -> None:
     """Initialise les dicts d'icônes après la création de QApplication."""
     from src.ui.design_tokens import is_dark_theme
     update_icons_for_theme(is_dark_theme())
-

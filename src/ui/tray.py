@@ -1,22 +1,13 @@
 """Gestion de l'icône dans la zone de notification Windows (systray)."""
 
 import os
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QAction, QMenu, QSystemTrayIcon
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction, QIcon
+from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from src.config.schema import APP_DIR
-from src.ui.design_tokens import (
-    COLOR_BG_SURFACE,
-    COLOR_BORDER,
-    COLOR_BORDER_SUBTLE,
-    COLOR_PRIMARY_LIGHT,
-    COLOR_TEXT_PRIMARY,
-    FONT_TEXT,
-    RADIUS_SM,
-    SIZE_LG,
-)
-from src.ui.icons import get_app_icon, get_logo_pixmap
+from src.ui.icons import get_app_icon
+from src.ui.stylesheet import qss_menu
 
 
 def create_tray_icon(app, assistant):
@@ -38,32 +29,7 @@ def create_tray_icon(app, assistant):
     tray_menu.setObjectName("TrayLightMenu")
     tray_menu.setAttribute(Qt.WA_TranslucentBackground, False)
     tray_menu.setAutoFillBackground(True)
-    tray_menu.setStyleSheet(f"""
-        QMenu#TrayLightMenu {{
-            background-color: {COLOR_BG_SURFACE};
-            color: {COLOR_TEXT_PRIMARY};
-            border: 1px solid {COLOR_BORDER};
-            padding: 6px;
-            font-family: {FONT_TEXT};
-            font-size: {SIZE_LG};
-        }}
-        QMenu#TrayLightMenu::item {{
-            background: transparent;
-            color: {COLOR_TEXT_PRIMARY};
-            padding: 7px 24px 7px 12px;
-            margin: 1px;
-            border-radius: {RADIUS_SM};
-        }}
-        QMenu#TrayLightMenu::item:selected {{
-            background-color: {COLOR_PRIMARY_LIGHT};
-            color: {COLOR_TEXT_PRIMARY};
-        }}
-        QMenu#TrayLightMenu::separator {{
-            height: 1px;
-            background-color: {COLOR_BORDER_SUBTLE};
-            margin: 5px 8px;
-        }}
-    """)
+    tray_menu.setStyleSheet(qss_menu("TrayLightMenu", padding=6))
     settings_action = QAction("Paramètres", tray_menu)
     hotkeys_enabled = bool(assistant.config.get("hotkeys_enabled", True))
     hotkeys_action = QAction(

@@ -1,0 +1,7 @@
+# Environnement complet de validation et de développement
+-r requirements-ui.txt
+-r requirements-skills.txt
+
+# Les tests du dépôt utilisent unittest et compileall.
+ruff>=0.8,<1.0
+coverage>=7.6,<8.0

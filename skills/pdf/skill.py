@@ -7,6 +7,7 @@ class PdfSkill:
     """Skill de creation de documents PDF."""
 
     name = "pdf"
+    icon = "icon.svg"
 
     def get_tools(self):
         return [

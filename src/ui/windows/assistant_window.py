@@ -1,6 +1,5 @@
 """Fenêtre flottante principale de l'assistant IA avec fond acrylique et gestion du dialogue."""
 
-import copy
 import html
 import json
 import os
@@ -11,9 +10,9 @@ from pathlib import Path
 
 import keyboard
 import pyperclip
-import sounddevice as sd
-from PyQt5.QtCore import (
+from PySide6.QtCore import (
     QEasingCurve,
+    QPoint,
     QPropertyAnimation,
     QRect,
     QRectF,
@@ -21,19 +20,19 @@ from PyQt5.QtCore import (
     Qt,
     QTimer,
     QUrl,
-    pyqtSignal,
+    Signal,
 )
-from PyQt5.QtGui import (
+from PySide6.QtGui import (
     QColor,
     QCursor,
     QDesktopServices,
+    QAction,
     QIcon,
     QPainterPath,
     QPalette,
     QRegion,
 )
-from PyQt5.QtWidgets import (
-    QAction,
+from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
@@ -46,54 +45,51 @@ from PyQt5.QtWidgets import (
 )
 
 from core.skill_manager import SkillManager
-from src.audio.recorder import AudioRecorderThread
 from src.config.manager import load_config, save_config
-from src.config.schema import APP_DIR, DEFAULT_CONFIG, LOGGER
+from src.config.schema import APP_DIR, LOGGER
 from src.documents.pdf_utils import open_pdf_at_page as _open_pdf_at_page
 from src.documents.thread import DocumentAnalysisThread
 from src.llm.client import LlamaThread
 from src.llm.response_parser import parse_audio_response, split_thinking_and_answer
 from src.llm.server_manager import get_server_manager
 from src.monitoring.runtime_info import RuntimeInfoThread
-from src.monitoring.server_status import ServerStatusThread
-from src.rendering.markdown import format_inline_markdown, markdown_to_html, markdown_to_spoken_text
-from src.tts.thread import KokoroTtsThread, KokoroWarmupThread
+from src.rendering.markdown import format_inline_markdown, markdown_to_html
+from src.tts.thread import KokoroWarmupThread
 from src.ui.design_tokens import (
-    COLOR_BG_SURFACE,
-    COLOR_BORDER,
-    COLOR_BORDER_SUBTLE,
-    COLOR_PRESS_DARK,
-    COLOR_PRIMARY,
-    COLOR_PRIMARY_LIGHT,
-    COLOR_TEXT_INVERSE,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    FONT_DISPLAY,
-    FONT_TEXT,
-    RADIUS_SM,
-    RADIUS_MD,
-    RADIUS_XL,
+    ICON_SIZE_BUTTON,
+    ICON_SIZE_CLOSE,
+    ICON_SIZE_COPY,
     SIZE_LG,
     SIZE_SM,
-    is_dark_theme,
 )
-from src.ui.icons import ICONS_DARK, get_logo_pixmap
-from src.ui.stylesheet import build_acrylic_window_qss
+from src.ui.controllers.assistant_orchestration import AssistantOrchestrationController
+from src.ui.windows.assistant_response_renderer import AssistantResponseRenderer
+import src.ui.design_tokens as t
+from src.ui.icons import ICONS_DARK
+from src.ui.stylesheet import build_acrylic_window_qss, qss_assistant_body, qss_menu
 from src.ui.theme import apply_acrylic_blur, apply_rounded_corners
 from src.ui.widgets.animated_buttons import AnimatedHeaderButton
+from src.ui.widgets.hairline import HairlineSeparator
 from src.ui.widgets.recording_indicator import RecordingIndicator
+from src.ui.widgets.tool_call_widget import ThinkingGroupWidget
+from src.ui.widgets.window_chrome import WindowChrome
 from src.ui.windows.document_dialog import DocumentDialog
 from src.ui.windows.runtime_info_dialog import RuntimeInfoDialog
 from src.ui.windows.settings_dialog import SettingsDialog
 
 LLAMA_SERVER_MANAGER = get_server_manager()
+
+WINDOW_SIZE_LG = f"{int(SIZE_LG.rstrip('px')) + 1}px"
+WINDOW_SIZE_SM = f"{int(SIZE_SM.rstrip('px')) + 1}px"
+
+
 class AssistantWindow(QWidget):
-    show_menu_signal = pyqtSignal()
-    trigger_direct_signal = pyqtSignal(int)
-    toggle_collapse_signal = pyqtSignal()
-    voice_press_signal = pyqtSignal(int)
-    voice_release_signal = pyqtSignal(int)
-    voice_cancel_signal = pyqtSignal()
+    show_menu_signal = Signal()
+    trigger_direct_signal = Signal(int)
+    toggle_collapse_signal = Signal()
+    voice_press_signal = Signal(int)
+    voice_release_signal = Signal(int)
+    voice_cancel_signal = Signal()
 
     def __init__(self):
         super().__init__()
@@ -139,6 +135,7 @@ class AssistantWindow(QWidget):
         self.current_request_is_audio = False
         self.document_thread = None
         self.document_dialog = None
+        self.document_dialog_position = None
         self.document_source_pages = []
         self.document_documents = []
         # Documents cumulés de la conversation Ctrl+9. Ils restent disponibles
@@ -148,6 +145,8 @@ class AssistantWindow(QWidget):
         self.document_history = []
         self.recording_indicator = RecordingIndicator()
         self.recording_indicator.cancel_requested.connect(self.cancel_voice_operation)
+        self.orchestration = AssistantOrchestrationController(self)
+        self.response_renderer = AssistantResponseRenderer(self)
 
         # Animation d'attente avec des points successifs : ., .., ...
         self.loading_action_name = ""
@@ -212,51 +211,16 @@ class AssistantWindow(QWidget):
             thread.deleteLater()
 
     def start_server_online_notification(self, tray_icon):
-        """Surveille le serveur au démarrage et notifie l'utilisateur lorsqu'il est prêt."""
-        self.startup_tray_icon = tray_icon
-        self.startup_server_notified = False
-        self.startup_status_thread = None
-        self.startup_status_timer = QTimer(self)
-        self.startup_status_timer.setInterval(1500)
-        self.startup_status_timer.timeout.connect(self.check_startup_server_status)
-        self.startup_status_timer.start()
-        QTimer.singleShot(0, self.check_startup_server_status)
+        return self.orchestration.start_server_online_notification(tray_icon)
 
     def check_startup_server_status(self):
-        if self.startup_server_notified:
-            return
-        if self.startup_status_thread is not None and self.startup_status_thread.isRunning():
-            return
-        self.startup_status_thread = ServerStatusThread(self.config.get('api_url', ''), self)
-        self.startup_status_thread.status_checked.connect(self.handle_startup_server_status)
-        self.startup_status_thread.finished.connect(self.on_startup_status_finished)
-        self.startup_status_thread.start()
+        return self.orchestration.check_startup_server_status()
 
     def on_startup_status_finished(self):
-        """Libère la référence afin d'autoriser le contrôle suivant."""
-        thread = self.sender()
-        if thread is self.startup_status_thread:
-            self.startup_status_thread = None
-        if thread is not None:
-            thread.deleteLater()
+        return self.orchestration.on_startup_status_finished()
 
     def handle_startup_server_status(self, online, detail, model_name):
-        if not online or self.startup_server_notified:
-            return
-        self.startup_server_notified = True
-        self.startup_status_timer.stop()
-
-        message = "Le serveur est en ligne et prêt à recevoir des requêtes."
-        if model_name and model_name != "Modèle inconnu":
-            displayed_model_name = re.sub(r"\.gguf$", "", model_name, flags=re.IGNORECASE)
-            message += f"\nModèle : {displayed_model_name}"
-
-        self.startup_tray_icon.showMessage(
-            "",
-            message,
-            self.startup_tray_icon.icon(),
-            5000
-        )
+        return self.orchestration.handle_startup_server_status(online, detail, model_name)
 
     def initUI(self):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
@@ -274,9 +238,10 @@ class AssistantWindow(QWidget):
         self.panel = QFrame(self)
         self.panel.setObjectName("AcrylicPanel")
         self.panel.setStyleSheet(
-            build_acrylic_window_qss()
-            + f"""
-            QScrollBar:horizontal {{ height: 0; }}
+            build_acrylic_window_qss(font_offset=1)
+            + qss_assistant_body()
+            + """
+            QScrollBar:horizontal { height: 0; }
             """
         )
 
@@ -284,54 +249,35 @@ class AssistantWindow(QWidget):
         panel_layout.setContentsMargins(0, 0, 0, 0)
         panel_layout.setSpacing(0)
 
-        header = QFrame(self.panel)
-        header.setObjectName("Header")
-        header.setFixedHeight(36)
+        header = WindowChrome("Transcript", self.panel)
         header.mousePressEvent = self.mousePressEvent
         header.mouseMoveEvent = self.mouseMoveEvent
         header.mouseReleaseEvent = self.mouseReleaseEvent
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(9, 1, 3, 0)
-        header_layout.setSpacing(3)
-        header_layout.setAlignment(Qt.AlignVCenter)
-
-        self.header_icon_label = QLabel(header)
-        self.header_icon_label.setFixedSize(18, 18)
-        self.header_icon_label.setAlignment(Qt.AlignCenter)
-        self.header_icon_label.setPixmap(get_logo_pixmap(16, APP_DIR))
-        header_layout.addWidget(self.header_icon_label, 0, Qt.AlignVCenter)
-
-        self.title_label = QLabel("Transcript", header)
-        self.title_label.setObjectName("TitleLabel")
-        self.title_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.title_label.setTextFormat(Qt.PlainText)
-        header_layout.addWidget(self.title_label, 1)
+        self.chrome = header
+        self.header_icon_label = header.icon_label
+        self.title_label = header.title_label
 
         self.speak_button = AnimatedHeaderButton(ICONS_DARK["speak"], "Lire la réponse à haute voix", header, is_audio=True)
-        self.speak_button.setIconSize(QSize(18, 18))
+        self.speak_button.setIconSize(QSize(ICON_SIZE_BUTTON, ICON_SIZE_BUTTON))
         self.speak_button.clicked.connect(self.toggle_speech)
-        header_layout.addWidget(self.speak_button, 0, Qt.AlignVCenter)
+        header.add_action(self.speak_button)
 
         self.copy_button = AnimatedHeaderButton(ICONS_DARK["copy"], "Copier la réponse", header)
-        self.copy_button.setIconSize(QSize(17, 17))
+        self.copy_button.setIconSize(QSize(ICON_SIZE_COPY, ICON_SIZE_COPY))
         self.copy_button.clicked.connect(self.copy_response)
-        header_layout.addWidget(self.copy_button, 0, Qt.AlignVCenter)
+        header.add_action(self.copy_button)
 
         self.close_button = AnimatedHeaderButton(ICONS_DARK["close"], "Fermer", header)
-        self.close_button.setIconSize(QSize(18, 18))
+        self.close_button.setIconSize(QSize(ICON_SIZE_CLOSE, ICON_SIZE_CLOSE))
         self.close_button.clicked.connect(self.close_response_window)
-        header_layout.addWidget(self.close_button, 0, Qt.AlignVCenter)
+        header.add_action(self.close_button)
         panel_layout.addWidget(header)
-        self.separator_wrapper = QWidget(self.panel)
-        sep_layout = QHBoxLayout(self.separator_wrapper)
-        sep_layout.setContentsMargins(12, 0, 12, 0)
-        sep_layout.setSpacing(0)
-        self.separator_container = QFrame(self.separator_wrapper)
-        self.separator_container.setFixedHeight(1)
-        sep_bg = "rgba(255,255,255,25)" if is_dark_theme() else "rgba(0,0,0,35)"
-        self.separator_container.setStyleSheet(f"background: {sep_bg}; border: none;")
-        sep_layout.addWidget(self.separator_container)
+        self.separator_wrapper = HairlineSeparator(self.panel)
         panel_layout.addWidget(self.separator_wrapper)
+
+        self.thinking_widget = ThinkingGroupWidget(self.panel)
+        self.thinking_widget.hide()
+        panel_layout.addWidget(self.thinking_widget)
 
         self.scroll_area = QScrollArea(self.panel)
         self.scroll_area.setWidgetResizable(True)
@@ -352,35 +298,50 @@ class AssistantWindow(QWidget):
         self.label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.label.setContentsMargins(0, 0, 0, 0)
         self.label.setMinimumWidth(0)
-        self.label.setStyleSheet(f"""
-            QLabel {{
-                background: transparent;
-                color: {COLOR_TEXT_PRIMARY};
-                padding: 10px 14px 10px 14px;
-                font-family: {FONT_TEXT};
-                font-size: {SIZE_LG};
-                line-height: 1.5;
-            }}
-        """)
+        self.label.setObjectName("TranscriptBody")
+        self.label.setStyleSheet("")
 
         pal = self.label.palette()
-        pal.setColor(QPalette.Highlight, QColor(COLOR_PRIMARY_LIGHT))
-        pal.setColor(QPalette.HighlightedText, QColor(COLOR_TEXT_PRIMARY))
+        pal.setColor(QPalette.Highlight, QColor(t.COLOR_PRIMARY_LIGHT))
+        pal.setColor(QPalette.HighlightedText, QColor(t.COLOR_TEXT_PRIMARY))
         self.label.setPalette(pal)
         self.scroll_area.setWidget(self.label)
         panel_layout.addWidget(self.scroll_area, 1)
 
         # Visible uniquement pendant l'exécution d'un outil.
         self.tool_status_label = QLabel("", self.panel)
+        self.tool_status_label.setObjectName("ToolStatus")
         self.tool_status_label.setTextFormat(Qt.PlainText)
-        self.tool_status_label.setStyleSheet(
-            "QLabel{background:rgba(37,99,184,18);color:#245A91;"
-            "border:none;padding:5px 10px;font-size:11px;font-style:italic;}"
-        )
+        self.tool_status_label.setStyleSheet("")
         self.tool_status_label.hide()
         panel_layout.addWidget(self.tool_status_label)
 
         self.layout.addWidget(self.panel)
+
+    def refresh_theme(self) -> None:
+        if not hasattr(self, "panel"):
+            return
+        self.panel.setStyleSheet(
+            build_acrylic_window_qss(font_offset=1)
+            + qss_assistant_body()
+            + """
+            QScrollBar:horizontal { height: 0; }
+            """
+        )
+        pal = self.label.palette()
+        pal.setColor(QPalette.Highlight, QColor(t.COLOR_PRIMARY_LIGHT))
+        pal.setColor(QPalette.HighlightedText, QColor(t.COLOR_TEXT_PRIMARY))
+        self.label.setPalette(pal)
+        if hasattr(self, "separator_wrapper"):
+            self.separator_wrapper.refresh_theme()
+        if hasattr(self, "chrome"):
+            self.chrome.refresh_logo()
+        self.close_button.setIcon(ICONS_DARK["close"])
+        speaking = self.tts_thread is not None and self.tts_thread.isRunning()
+        self.speak_button.setIcon(ICONS_DARK["stop"] if speaking else ICONS_DARK["speak"])
+        self.copy_button.setIcon(ICONS_DARK["copy"])
+        if hasattr(self, "recording_indicator"):
+            self.recording_indicator.refresh_theme()
 
     def nativeEvent(self, event_type, message):
         # Aucun traitement natif de redimensionnement : la fenêtre peut
@@ -449,7 +410,12 @@ class AssistantWindow(QWidget):
     def calculate_expanded_height(self):
         """Calcule la hauteur utile à partir du contenu réellement affiché."""
         self.label.adjustSize()
-        content_height = self.label.sizeHint().height() + 52
+        thinking_height = (
+            self.thinking_widget.sizeHint().height()
+            if self.thinking_widget.isVisible()
+            else 0
+        )
+        content_height = self.label.sizeHint().height() + thinking_height + 52
         maximum_height = max(150, int(self.width() * 9 / 16))
         return max(70, min(maximum_height, content_height))
 
@@ -569,35 +535,14 @@ class AssistantWindow(QWidget):
         menu.setObjectName("AssistantMenu")
         menu.setAttribute(Qt.WA_TranslucentBackground, False)
         menu.setAutoFillBackground(True)
-        menu.setStyleSheet(f"""
-            QMenu#AssistantMenu {{
-                background-color: {COLOR_BG_SURFACE};
-                color: {COLOR_TEXT_PRIMARY};
-                border: 1px solid {COLOR_BORDER};
-                border-radius: {RADIUS_MD};
-                padding: 8px;
-                font-family: {FONT_TEXT};
-                font-size: {SIZE_LG};
-            }}
-            QMenu#AssistantMenu::item {{
-                background-color: transparent;
-                color: {COLOR_TEXT_PRIMARY};
-                min-height: 22px;
-                padding: 7px 22px 7px 12px;
-                margin: 2px;
-                border: none;
-                border-radius: {RADIUS_SM};
-            }}
-            QMenu#AssistantMenu::item:selected {{
-                background-color: {COLOR_PRIMARY};
-                color: {COLOR_TEXT_INVERSE};
-            }}
-            QMenu#AssistantMenu::separator {{
-                height: 1px;
-                background-color: {COLOR_BORDER_SUBTLE};
-                margin: 6px 10px;
-            }}
-        """)
+        menu.setStyleSheet(
+            qss_menu(
+                "AssistantMenu",
+                font_size=WINDOW_SIZE_LG,
+                selected_as_primary=True,
+                padding=8,
+            )
+        )
 
         for i, action in enumerate(self.config['actions']):
             display_name = action['name']
@@ -626,12 +571,19 @@ class AssistantWindow(QWidget):
         apply_rounded_corners(int(menu.winId()))
 
         cursor_pos = QCursor.pos()
-        menu.exec_(cursor_pos)
+        menu.exec(cursor_pos)
 
     def toggle_open_window_collapse(self):
-        """Ctrl+0 replie ou déplie la fenêtre de l'assistant actuellement ouverte."""
-        if self.document_dialog is not None and self.document_dialog.isVisible():
-            self.document_dialog.toggle_collapse()
+        """Ctrl+0 masque ou réaffiche la fenêtre Ctrl+9 actuellement ouverte."""
+        if self.document_dialog is not None:
+            if self.document_dialog.isVisible():
+                self.document_dialog.hide()
+            else:
+                self.document_dialog.show()
+                self.document_dialog.raise_()
+                self.document_dialog.activateWindow()
+                for delay in (0, 80, 180):
+                    QTimer.singleShot(delay, self.document_dialog.focus_message_input)
             return
         if not self.isVisible():
             return
@@ -655,15 +607,49 @@ class AssistantWindow(QWidget):
         if self.document_dialog is not None and self.document_dialog.isVisible():
             self.document_dialog.raise_()
             self.document_dialog.activateWindow()
-            QTimer.singleShot(0, self.document_dialog.focus_message_input)
+            for delay in (0, 80, 180):
+                QTimer.singleShot(delay, self.document_dialog.focus_message_input)
             return
         self.document_history = []
         self.document_session_documents = []
         self.document_dialog = DocumentDialog(self)
+        self._restore_document_dialog_position(self.document_dialog)
         self.document_dialog.ask_requested.connect(self.start_document_analysis)
-        self.document_dialog.finished.connect(lambda _result: setattr(self, "document_dialog", None))
+        self.document_dialog.finished.connect(
+            self._remember_document_dialog_position
+        )
         self.document_dialog.show()
-        QTimer.singleShot(0, self.document_dialog.focus_message_input)
+        self.document_dialog.raise_()
+        self.document_dialog.activateWindow()
+        for delay in (0, 80, 180):
+            QTimer.singleShot(delay, self.document_dialog.focus_message_input)
+
+    def _remember_document_dialog_position(self, _result=0):
+        dialog = self.document_dialog
+        if dialog is not None:
+            self.document_dialog_position = QPoint(dialog.pos())
+            self.document_dialog = None
+
+    def _restore_document_dialog_position(self, dialog):
+        position = self.document_dialog_position
+        if position is None:
+            parent_rect = self.frameGeometry()
+            position = parent_rect.topLeft() + QPoint(24, 24)
+
+        screen = QApplication.screenAt(position) or QApplication.primaryScreen()
+        if screen is None:
+            dialog.move(position)
+            return
+        available = screen.availableGeometry()
+        x = max(
+            available.left(),
+            min(position.x(), available.right() - dialog.width() + 1),
+        )
+        y = max(
+            available.top(),
+            min(position.y(), available.bottom() - dialog.height() + 1),
+        )
+        dialog.move(x, y)
 
     def start_document_analysis(self, paths, question, audio_data=None, forced_tool=None):
         """Analyse une nouvelle question en conservant l'historique de la conversation."""
@@ -697,6 +683,7 @@ class AssistantWindow(QWidget):
             forced_tool=forced_tool,
         )
         self.document_thread.new_text.connect(self.update_document_text)
+        self.document_thread.thinking_text.connect(self.update_document_thinking)
         self.document_thread.tool_event.connect(self.update_document_tool_event)
         self.document_thread.request_error.connect(self.handle_document_error)
         self.document_thread.finished.connect(self.on_document_finished)
@@ -726,6 +713,10 @@ class AssistantWindow(QWidget):
     def update_document_text(self, text):
         self.response_text += text
         if self.document_dialog is not None: self.document_dialog.append_response(text)
+
+    def update_document_thinking(self, text):
+        if self.document_dialog is not None:
+            self.document_dialog.append_thinking(text)
 
     def open_document_source(self, filename, page):
         """Ouvre le document demandé par un lien de source, à la bonne page."""
@@ -785,36 +776,7 @@ class AssistantWindow(QWidget):
 
     def set_hotkeys_enabled(self, enabled, persist=True):
         """Active ou désactive tous les raccourcis globaux de l'assistant."""
-        enabled = bool(enabled)
-        app = QApplication.instance()
-        menu_manager = getattr(app, "menu_hotkey_manager", None)
-        numeric_manager = getattr(app, "numeric_hotkey_manager", None)
-        voice_manager = getattr(app, "voice_hotkey_manager", None)
-
-        if menu_manager is not None:
-            menu_manager.set_enabled(enabled)
-        if numeric_manager is not None:
-            numeric_manager.set_enabled(enabled)
-        if voice_manager is not None:
-            voice_enabled = bool(self.config.get("voice_input", {}).get("enabled", True))
-            voice_manager.set_enabled(enabled and voice_enabled)
-
-        self.config["hotkeys_enabled"] = enabled
-        if persist:
-            save_config(self.config)
-
-        tray_action = getattr(app, "hotkeys_action", None)
-        if tray_action is not None:
-            tray_action.setText(
-                "Désactiver les raccourcis" if enabled
-                else "Activer les raccourcis"
-            )
-
-        state = "activés" if enabled else "désactivés"
-        tray_icon = getattr(app, "tray_icon", None)
-        if tray_icon is not None:
-            tray_icon.setToolTip(f"Assistant IA - Raccourcis {state}")
-        LOGGER.info("Raccourcis clavier %s.", state)
+        return self.orchestration.set_hotkeys_enabled(enabled, persist)
 
     def toggle_hotkeys(self, enabled=None):
         """Inverse l'état des raccourcis ou applique l'état fourni par Qt."""
@@ -823,28 +785,7 @@ class AssistantWindow(QWidget):
         self.set_hotkeys_enabled(enabled)
 
     def set_automatic_reading_enabled(self, enabled, persist=True):
-        """Active ou désactive la lecture automatique des réponses."""
-        enabled = bool(enabled)
-        tts_config = self.config.setdefault(
-            "text_to_speech", copy.deepcopy(DEFAULT_CONFIG["text_to_speech"])
-        )
-        tts_config["automatic_reading"] = enabled
-        if persist:
-            save_config(self.config)
-
-        app = QApplication.instance()
-        tray_action = getattr(app, "automatic_reading_action", None)
-        if tray_action is not None:
-            tray_action.setText(
-                "Désactiver la lecture à voix haute" if enabled
-                else "Activer la lecture à voix haute"
-            )
-
-        if not enabled:
-            self.stop_speech()
-
-        state = "activée" if enabled else "désactivée"
-        LOGGER.info("Lecture automatique des réponses %s.", state)
+        return self.orchestration.set_automatic_reading_enabled(enabled, persist)
 
     def toggle_automatic_reading(self):
         """Inverse la lecture automatique depuis l'icône système."""
@@ -877,11 +818,13 @@ class AssistantWindow(QWidget):
         manager = getattr(QApplication.instance(), "voice_hotkey_manager", None)
         if manager is not None: manager.set_enabled(False)
         dialog = SettingsDialog(self.config, self)
-        if dialog.exec_():
+        if dialog.exec():
             self.config = load_config()
             self.set_automatic_reading_enabled(
                 self._automatic_tts_enabled(), persist=False
             )
+            if self.document_dialog is not None:
+                self.document_dialog.apply_config(self.config.get("ctrl9", {}))
             self.label.setText("Paramètres mis à jour.")
             self.show_window()
         if manager is not None:
@@ -902,44 +845,16 @@ class AssistantWindow(QWidget):
 
 
     def render_response(self, status_text=""):
-        if status_text:
-            content = (
-                '<div style="color:#555555; font-style:italic;">'
-                f'{html.escape(status_text)}'
-                '</div>'
-            )
-        else:
-            _, answer_text = self.split_thinking_and_answer(self.response_text)
-            if self.current_request_is_audio:
-                transcript, answer_text = self.parse_audio_response(answer_text)
-                if transcript:
-                    self.title_label.setText(transcript)
-                    self.title_label.setToolTip(transcript)
-            elif self.document_response_active:
-                self.title_label.setText("Documents")
-                self.title_label.setToolTip("Analyse documentaire")
-            content = self.markdown_to_html(answer_text) if answer_text else ''
-
-        logo_html = ""
-        logo_path = "logo.png"
-        if hasattr(sys, 'frozen'):
-            logo_path = os.path.join(sys._MEIPASS, "logo.png")
-        elif '__file__' in globals():
-            logo_path = os.path.join(APP_DIR, "logo.png")
-
-        if os.path.exists(logo_path) and not status_text:
-            abs_path = os.path.abspath(logo_path).replace('\\', '/')
-            logo_html = f'<img src="file:///{abs_path}" width="32" height="32" />'
-            final_html = f'<table cellspacing="0" cellpadding="0" border="0" width="100%"><tr><td valign="top" style="padding-right: 8px; padding-bottom: 4px;">{logo_html}</td><td valign="top" width="100%">{content}</td></tr></table>'
-        else:
-            final_html = content
-
-        self.label.setText(final_html)
+        return self.response_renderer.render_response(status_text)
 
     def update_loading_animation(self):
-        self.loading_dot_count = (self.loading_dot_count % 3) + 1
-        dots = "." * self.loading_dot_count
-        self.render_response(f"{self.loading_action_name}{dots}")
+        return self.response_renderer.update_loading_animation()
+
+    def update_text(self, text):
+        return self.response_renderer.update_text(text)
+
+    def flush_stream_text(self):
+        return self.response_renderer.flush_stream_text()
 
     def stop_generation(self):
         self.loading_timer.stop()
@@ -1005,108 +920,28 @@ class AssistantWindow(QWidget):
         animate_icon_size(QSize(17, 17), QSize(8, 8), 120, show_check)
 
     def toggle_speech(self):
-        if self.tts_thread is not None and self.tts_thread.isRunning():
-            self.stop_speech()
-            return
-        _, answer_text = self.split_thinking_and_answer(self.response_text)
-        if self.current_request_is_audio:
-            _, answer_text = self.parse_audio_response(answer_text)
-        answer_text = answer_text.strip()
-        if not answer_text:
-            self.speak_button.setToolTip("Aucune réponse à lire")
-            return
-        cfg = self.config.get("text_to_speech", DEFAULT_CONFIG["text_to_speech"])
-        self.tts_thread = KokoroTtsThread(answer_text, cfg, self)
-        self.tts_thread.finished_ok.connect(self.on_speech_finished)
-        self.tts_thread.failed.connect(self.on_speech_failed)
-        self.tts_thread.finished.connect(self.tts_thread.deleteLater)
-        self.speak_button.setIcon(ICONS_DARK["stop"])
-        self.speak_button.setToolTip("Arrêter la lecture")
-        self.tts_thread.start()
+        return self.orchestration.toggle_speech()
 
     def _automatic_tts_enabled(self):
-        return bool(
-            self.config.get("text_to_speech", {}).get("automatic_reading", False)
-        )
+        return self.orchestration.automatic_tts_enabled()
 
     def queue_streaming_speech(self, text, flush=False):
-        """Découpe le flux en phrases et les envoie immédiatement à Kokoro."""
-        if not self._automatic_tts_enabled() or self.current_request_is_audio:
-            return
-
-        self.tts_streaming_auto = True
-        self.tts_stream_buffer += text
-
-        # Coupe après une ponctuation forte. La limite de 24 caractères évite
-        # de lancer Kokoro sur de très petits fragments ou des titres isolés.
-        while True:
-            match = re.search(r"[.!?…](?:\s+|$)", self.tts_stream_buffer)
-            if match is None:
-                break
-            end = match.end()
-            segment = self.tts_stream_buffer[:end].strip()
-            if len(markdown_to_spoken_text(segment)) < 24 and not flush:
-                next_match = re.search(r"[.!?…](?:\s+|$)", self.tts_stream_buffer[end:])
-                if next_match is None:
-                    break
-                end += next_match.end()
-                segment = self.tts_stream_buffer[:end].strip()
-            self.tts_stream_buffer = self.tts_stream_buffer[end:].lstrip()
-            if markdown_to_spoken_text(segment):
-                self.tts_queue.append(segment)
-
-        if flush:
-            remaining = self.tts_stream_buffer.strip()
-            self.tts_stream_buffer = ""
-            if markdown_to_spoken_text(remaining):
-                self.tts_queue.append(remaining)
-
-        self._start_next_tts_segment()
+        return self.orchestration.queue_streaming_speech(text, flush)
 
     def _start_next_tts_segment(self):
-        if self.tts_thread is not None or not self.tts_queue:
-            if self.tts_thread is None and not self.tts_queue and not self.is_generating:
-                self.tts_streaming_auto = False
-                self.speak_button.setIcon(ICONS_DARK["speak"])
-                self.speak_button.setToolTip("Lire la réponse à haute voix")
-            return
-
-        segment = self.tts_queue.pop(0)
-        cfg = self.config.get("text_to_speech", DEFAULT_CONFIG["text_to_speech"])
-        thread = KokoroTtsThread(segment, cfg, self)
-        self.tts_thread = thread
-        thread.finished_ok.connect(self._on_tts_segment_finished)
-        thread.failed.connect(self.on_speech_failed)
-        thread.finished.connect(thread.deleteLater)
-        self.speak_button.setIcon(ICONS_DARK["stop"])
-        self.speak_button.setToolTip("Arrêter la lecture")
-        thread.start()
+        return self.orchestration._start_next_tts_segment()
 
     def _on_tts_segment_finished(self):
-        self.tts_thread = None
-        QTimer.singleShot(0, self._start_next_tts_segment)
+        return self.orchestration._on_tts_segment_finished()
 
     def stop_speech(self):
-        self.tts_queue.clear()
-        self.tts_stream_buffer = ""
-        self.tts_streaming_auto = False
-        if self.tts_thread is not None:
-            self.tts_thread.stop()
-        self.on_speech_finished()
+        return self.orchestration.stop_speech()
 
     def on_speech_finished(self):
-        self.speak_button.setIcon(ICONS_DARK["speak"])
-        self.speak_button.setToolTip("Lire la réponse à haute voix")
-        self.tts_thread = None
+        return self.orchestration.on_speech_finished()
 
     def on_speech_failed(self, detail):
-        LOGGER.error("Échec de la synthèse vocale Kokoro : %s", detail)
-        self.tts_queue.clear()
-        self.tts_stream_buffer = ""
-        self.tts_streaming_auto = False
-        self.speak_button.setIcon(ICONS_DARK["speak"])
-        self.speak_button.setToolTip("Synthèse vocale indisponible : " + detail[:120])
-        self.tts_thread = None
+        return self.orchestration.on_speech_failed(detail)
 
     def open_response_link(self, href):
         """Ouvre explicitement les fichiers locaux avec l'application Windows associée."""
@@ -1141,81 +976,23 @@ class AssistantWindow(QWidget):
             QTimer.singleShot(1500, lambda: self.copy_button.setToolTip("Copier la réponse"))
 
     def _selected_voice_device(self):
-        voice = self.config.get("voice_input", {})
-        saved_name = voice.get("input_device_name", "")
-        try:
-            devices = sd.query_devices()
-            if saved_name:
-                for index, device in enumerate(devices):
-                    if device.get("name") == saved_name and int(device.get("max_input_channels", 0)) > 0:
-                        return index
-                LOGGER.warning("Microphone enregistré introuvable, périphérique par défaut utilisé")
-            return None
-        except Exception:
-            return voice.get("input_device")
+        return self.orchestration.selected_voice_device()
 
     def start_voice_recording(self, index):
-        """Ctrl+Alt+N démarre une capture destinée exclusivement à l'action N."""
-        voice = self.config.get("voice_input", {})
-        if not 0 <= index < len(self.config["actions"]):
-            return
-        if not voice.get("enabled", True) or self.voice_sending or (self.audio_thread is not None and self.audio_thread.isRunning()):
-            return
-        self.voice_action_index = index
-        self.voice_cancelled = False
-        self.recording_indicator.start_recording(self.config["actions"][index]["name"])
-        self.audio_thread = AudioRecorderThread(
-            self._selected_voice_device(),
-            voice.get("sample_rate", 16000),
-            voice.get("maximum_duration", 60.0),
-            release_tail_ms=voice.get("release_tail_ms", 700),
-            microphone_gain=voice.get("microphone_gain", 2.0),
-            parent=self,
-        )
-        self.audio_thread.level_changed.connect(self.recording_indicator.set_level)
-        self.audio_thread.recorded.connect(self.handle_voice_audio)
-        self.audio_thread.error.connect(self.handle_voice_error)
-        self.audio_thread.maximum_reached.connect(lambda: self.recording_indicator.set_status("Durée maximale atteinte"))
-        self.audio_thread.start()
+        return self.orchestration.start_voice_recording(index)
 
     def stop_voice_recording(self, index):
-        if self.voice_action_index != index:
-            return
-        if self.audio_thread is not None and self.audio_thread.isRunning():
-            self.recording_indicator.hide()
-            self.audio_thread.stop_recording()
+        return self.orchestration.stop_voice_recording(index)
 
 
     def cancel_voice_operation(self):
-        self.voice_cancelled = True
-        self.voice_action_index = None
-        if self.audio_thread is not None and self.audio_thread.isRunning(): self.audio_thread.stop_recording()
-        if self.voice_sending: self.stop_generation()
-        self.voice_sending = False
-        self.recording_indicator.hide()
+        return self.orchestration.cancel_voice_operation()
 
     def handle_voice_audio(self, audio_data, duration, rms):
-        self.audio_thread = None
-        if self.voice_cancelled: return
-        voice = self.config.get("voice_input", {})
-        if not audio_data or duration < voice.get("minimum_duration",0.3) or rms < voice.get("minimum_rms_level", 0.0001):
-            self.recording_indicator.set_status("Aucun son détecté")
-            QTimer.singleShot(1200, self.recording_indicator.hide)
-            return
-        if len(audio_data) > 25 * 1024 * 1024:
-            self.handle_voice_error("L’enregistrement audio est trop volumineux."); return
-        # L'indicateur disparaît pendant l'envoi, sans afficher « Envoi au modèle ».
-        self.recording_indicator.hide()
-        self.voice_sending = True
-        action_index = self.voice_action_index
-        self.voice_action_index = None
-        if action_index is not None:
-            self.trigger_action(action_index, audio_data=audio_data, audio_format="wav")
+        return self.orchestration.handle_voice_audio(audio_data, duration, rms)
 
     def handle_voice_error(self, message):
-        self.audio_thread = None; self.voice_sending = False; self.voice_action_index = None
-        self.recording_indicator.hide()
-        self.label.setText(f"⚠️ {html.escape(message)}"); self.show_window()
+        return self.orchestration.handle_voice_error(message)
 
     def trigger_action(self, index, user_text_override=None, audio_data=None, audio_format=None):
         if not 0 <= index < len(self.config["actions"]): return
@@ -1238,6 +1015,7 @@ class AssistantWindow(QWidget):
             return
         self.response_text = ""
         self.request_failed = False
+        self.thinking_widget.clear()
         self.pending_stream_text = ""
         self.stream_render_timer.stop()
         self.loading_action_name = action_cfg['name']
@@ -1266,13 +1044,30 @@ class AssistantWindow(QWidget):
             vocabulary_prompt=self.config.get("voice_input", {}).get("vocabulary_prompt", ""),
             skill_manager=self.skill_manager,
             enable_tools=(str(action_cfg.get("name", "")).strip().casefold() != "améliorer"),
+            max_tokens=self.config.get("llm_max_tokens", 8192),
         )
         self.thread.new_text.connect(self.update_text)
+        self.thread.thinking_text.connect(self.update_thinking)
         self.thread.tool_event.connect(self.update_tool_event)
         self.thread.new_text.connect(lambda _text: self.recording_indicator.hide())
         self.thread.request_error.connect(self.handle_voice_request_error)
         self.thread.finished.connect(self.on_finished)
         self.thread.start()
+
+    def update_thinking(self, text):
+        """Affiche séparément le raisonnement streaming de Gemma."""
+        if not text:
+            return
+        if self.loading_timer.isActive():
+            self.loading_timer.stop()
+        self.thinking_widget.append_text(text)
+        self.thinking_widget.updateGeometry()
+        self.panel.layout().invalidate()
+        self.panel.layout().activate()
+        if self.isVisible() and not self.is_collapsed:
+            self.stop_height_animation()
+            self.expanded_height = self.calculate_expanded_height()
+            self.resize(self.width(), self.expanded_height)
 
     def handle_voice_request_error(self, message, incompatible):
         self.request_failed = True
@@ -1365,31 +1160,6 @@ class AssistantWindow(QWidget):
                 self.pending_stream_text += self._file_link_markdown(path)
             if self.pending_stream_text and not self.stream_render_timer.isActive():
                 self.stream_render_timer.start()
-
-    def update_text(self, text):
-        # Le premier fragment doit stopper immediatement l'indicateur d'attente.
-        if self.loading_timer.isActive():
-            self.loading_timer.stop()
-        self.pending_stream_text += text
-        self.queue_streaming_speech(text)
-        if not self.stream_render_timer.isActive():
-            self.stream_render_timer.start()
-
-    def flush_stream_text(self):
-        if not self.pending_stream_text:
-            return
-        self.response_text += self.pending_stream_text
-        self.pending_stream_text = ""
-        # Méthode de streaming issue de Assistant_streamok.py : rendu rapide,
-        # ajustement immédiat du contenu et de la hauteur à chaque lot de tokens.
-        self.render_response()
-        self.label.adjustSize()
-        if not self.is_collapsed:
-            self.stop_height_animation()
-            self.expanded_height = self.calculate_expanded_height()
-            self.resize(self.width(), self.expanded_height)
-        scrollbar = self.scroll_area.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
 
     def on_finished(self):
         finished_thread = self.sender()

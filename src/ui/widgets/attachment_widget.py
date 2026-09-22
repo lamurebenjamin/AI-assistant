@@ -1,8 +1,8 @@
 """Widget de prévisualisation des fichiers et images joints."""
 
-from PyQt5.QtCore import QRectF
-from PyQt5.QtGui import QColor, QPainter, QPen
-from PyQt5.QtWidgets import QWidget
+from PySide6.QtCore import QRectF
+from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtWidgets import QWidget
 
 
 class AttachmentPreviewWidget(QWidget):

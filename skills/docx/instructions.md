@@ -4,7 +4,7 @@ Cette skill permet de créer des documents Microsoft Word (.docx).
 
 ## Outil
 
-`create_docx`
+`Nouveau_Document`
 
 Arguments obligatoires :
 

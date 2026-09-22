@@ -1,7 +1,7 @@
 """Gestionnaires de raccourcis clavier globaux (voix, menu contextuel, raccourcis numériques)."""
 
 import keyboard
-from PyQt5.QtCore import QTimer
+from PySide6.QtCore import QTimer
 
 from src.config.schema import LOGGER
 from src.platform.foreground import is_adobe_reader_foreground
@@ -125,7 +125,7 @@ class NumericHotkeyManager:
 
     def _make_callback(self, index):
         if index < 0:
-            # Ctrl+0 replie ou déplie la fenêtre visible, comme un clic sur sa barre de titre.
+            # Ctrl+0 masque ou réaffiche la fenêtre Ctrl+9 ouverte.
             return self.assistant.toggle_collapse_signal.emit
         return lambda: self.assistant.trigger_direct_signal.emit(index)
 

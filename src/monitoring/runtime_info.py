@@ -9,7 +9,7 @@ import sys
 from typing import Set
 
 import requests
-from PyQt5.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 from src.config.schema import STATUS_TIMEOUT
 
@@ -17,7 +17,7 @@ from src.config.schema import STATUS_TIMEOUT
 class RuntimeInfoThread(QThread):
     """Collecte les ressources de l'interface et du serveur llama.cpp géré."""
 
-    info_ready = pyqtSignal(str)
+    info_ready = Signal(str)
 
     def __init__(self, api_url: str, process_ids: Set[int], parent=None):
         super().__init__(parent)

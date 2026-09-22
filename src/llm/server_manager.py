@@ -11,7 +11,13 @@ from src.config.schema import APP_DIR, LOGGER
 
 
 class LlamaServerManager:
-    """Contrôle le démarrage, l'arrêt et la surveillance de llama-server."""
+    """Contrôle le cycle de vie de ``llama-server.exe``.
+
+    ``start`` et ``stop`` retournent toujours ``(succès, message)`` :
+    l'échec de validation des chemins ou de création du processus est explicite
+    dans le message, sans lever d'exception applicative. ``stop`` termine le
+    processus, puis force son arrêt après les délais prévus.
+    """
 
     def __init__(self):
         self.process: Optional[subprocess.Popen] = None

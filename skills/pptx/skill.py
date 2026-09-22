@@ -7,6 +7,7 @@ class PptxSkill:
     """Skill de création de présentations Microsoft PowerPoint."""
 
     name = "pptx"
+    icon = "icon.svg"
 
     def get_tools(self):
         return [

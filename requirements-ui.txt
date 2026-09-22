@@ -1,0 +1,12 @@
+# Interface native, raccourcis et audio
+-r requirements.txt
+PySide6
+keyboard
+pyperclip
+sounddevice
+
+# Synthèse vocale et accélération ONNX/CUDA
+# Ne pas installer onnxruntime (CPU) avec onnxruntime-gpu :
+# les deux paquets partagent le même namespace.
+kokoro-onnx
+onnxruntime-gpu==1.19.2

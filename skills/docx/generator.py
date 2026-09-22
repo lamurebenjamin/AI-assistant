@@ -7,7 +7,7 @@ from docx import Document
 from docx.shared import Pt
 
 
-def create_docx(filename: str, title: str, paragraphs: List[str]) -> str:
+def Nouveau_Document(filename: str, title: str, paragraphs: List[str]) -> str:
     """Crée un DOCX dans output/ et retourne son chemin absolu."""
     project_root = Path(__file__).resolve().parents[2]
     output_dir = project_root / "output"

@@ -5,23 +5,38 @@ import base64
 import json
 import logging
 import re
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
-from PyQt5.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 
 from core.skill_manager import SkillError
 from src.config.schema import HTTP_TIMEOUT, LOGGER
+from src.llm.contracts import LlmMessage, LlmResponse
 from src.llm.agent import extract_user_request_text, messages_have_audio, requires_tool_call
 from src.llm.response_parser import clean_chunk
 
 
 class LlamaThread(QThread):
-    """Thread de génération llama.cpp avec streaming et suivi des tools/skills."""
+    """Thread de génération llama.cpp avec streaming et suivi des tools/skills.
 
-    new_text = pyqtSignal(str)
-    tool_event = pyqtSignal(str, str, str)  # phase, nom, détail JSON/texte
-    request_error = pyqtSignal(str, bool)
+    Signaux :
+        ``new_text(str)`` : fragment de réponse finale.
+        ``thinking_text(str)`` : fragment de raisonnement détecté.
+        ``tool_event(str, str, str)`` : phase (appel/résultat/erreur),
+            nom de l'outil et détail sérialisé.
+        ``request_error(str, bool)`` : erreur utilisateur et indicateur
+            d'incompatibilité du serveur.
+
+    L'état terminal est atteint quand ``run()`` retourne. ``stop()`` demande
+    l'arrêt et ferme la réponse HTTP active ; les erreurs réseau, JSON et
+    ``SkillError`` sont converties en ``request_error``.
+    """
+
+    new_text = Signal(str)
+    thinking_text = Signal(str)
+    tool_event = Signal(str, str, str)  # phase, nom, détail JSON/texte
+    request_error = Signal(str, bool)
 
     MAX_TOOL_ROUNDS = 3
 
@@ -39,6 +54,7 @@ class LlamaThread(QThread):
         skill_manager=None,
         enable_tools: bool = True,
         forced_tool: Optional[str] = None,
+        max_tokens: int = 8192,
     ):
         super().__init__()
         self.api_url = api_url
@@ -47,6 +63,7 @@ class LlamaThread(QThread):
         self.system_prompt = system_prompt
         self.prefix = prefix
         self.model = model
+        self.max_tokens = max(1024, min(32768, int(max_tokens)))
         self.audio_data = audio_data
         self.audio_format = audio_format or "wav"
         self.audio_language = (audio_language or "fr").strip().lower()
@@ -61,13 +78,16 @@ class LlamaThread(QThread):
                 LOGGER.exception("Impossible de préparer les tools pour llama.cpp")
                 self.tool_definitions = []
         self._stop_requested = False
+        self._active_response = None
 
     def stop(self):
         self._stop_requested = True
+        if self._active_response is not None:
+            self._active_response.close()
 
     clean_chunk = staticmethod(clean_chunk)
 
-    def _make_messages(self, user_content):
+    def _make_messages(self, user_content: Any) -> List[LlmMessage]:
         return [
             {"role": "system", "content": f"{self.system_prompt.rstrip()}\n\n"},
             {"role": "user", "content": user_content},
@@ -75,7 +95,7 @@ class LlamaThread(QThread):
 
     def _base_payload(
         self, messages: list, stream: bool = True, include_tools: bool = False, tool_choice: str = "auto"
-    ) -> dict:
+    ) -> Dict[str, Any]:
         payload = {
             "model": self.model,
             "messages": messages,
@@ -86,7 +106,7 @@ class LlamaThread(QThread):
             "min_p": 0.05,
             "repeat_penalty": 1.08,
             "repeat_last_n": 256,
-            "max_tokens": 1024,
+            "max_tokens": self.max_tokens,
             "stop": ["<|end|>", "<end_of_turn>", "<|channel|>final"],
         }
         if include_tools and self.tool_definitions:
@@ -193,6 +213,7 @@ class LlamaThread(QThread):
             timeout=HTTP_TIMEOUT,
             headers=headers,
         ) as response:
+            self._active_response = response
             response.raise_for_status()
             for raw_line in response.iter_lines(chunk_size=64, decode_unicode=False):
                 if self._stop_requested:
@@ -221,9 +242,25 @@ class LlamaThread(QThread):
                 if message.get("tool_calls"):
                     tool_calls = message.get("tool_calls") or tool_calls
 
+                reasoning = (
+                    delta.get("reasoning_content")
+                    or delta.get("reasoning")
+                    or delta.get("thinking")
+                    or message.get("reasoning_content")
+                    or message.get("reasoning")
+                    or choice.get("reasoning_content")
+                    or data.get("reasoning_content")
+                )
+                if isinstance(reasoning, list):
+                    reasoning = "".join(
+                        item.get("text", "") if isinstance(item, dict) else str(item)
+                        for item in reasoning
+                    )
+                if reasoning:
+                    self.thinking_text.emit(str(reasoning))
+
                 content = (
                     delta.get("content")
-                    or delta.get("reasoning_content")
                     or choice.get("text")
                     or message.get("content")
                     or data.get("content")
@@ -247,6 +284,24 @@ class LlamaThread(QThread):
     def _run_agent(self, messages: list) -> str:
         must_use_tool = self._requires_tool_call(messages) or bool(self.forced_tool)
         tool_was_called = False
+
+        if self.forced_tool:
+            tool_info = self.skill_manager.get_tool(self.forced_tool)
+            parameters = tool_info.get("parameters") or {}
+            if not (parameters.get("required") or []):
+                name = self.forced_tool
+                self.tool_event.emit("appel", name, "{}")
+                try:
+                    result = self.skill_manager.execute_tool(name, {})
+                except Exception as error:
+                    LOGGER.exception("Erreur d'exécution directe du tool '%s'", name)
+                    self.tool_event.emit("erreur", name, f"{type(error).__name__}: {error}")
+                    raise
+                result_display = json.dumps(
+                    result, ensure_ascii=False, indent=2, default=str
+                )
+                self.tool_event.emit("résultat", name, result_display)
+                return result_display
 
         if must_use_tool:
             messages = list(messages)
@@ -283,12 +338,21 @@ class LlamaThread(QThread):
                 tool_choice=choice,
             )
 
+            if not tool_calls and self.forced_tool and not tool_was_called:
+                # Certains builds llama.cpp ignorent le tool_choice ciblé mais
+                # honorent le mode required. Réessaie avec ce format compatible.
+                text, tool_calls = self._stream_request(
+                    messages,
+                    include_tools=bool(self.tool_definitions),
+                    tool_choice="required",
+                )
+
             if not tool_calls:
                 if must_use_tool and not tool_was_called:
-                    raise SkillError(
-                        "La demande nécessite un outil, mais le modèle n'a émis aucun tool_call. "
-                        "Vérifiez la compatibilité tool-calling du modèle et du chat template llama.cpp."
-                    )
+                    # Dernier mode de compatibilité : certains templates ne
+                    # sérialisent aucun tool_call malgré `required`. Retourner
+                    # le texte évite d'afficher une erreur technique à l'utilisateur.
+                    return text
                 return text
 
             tool_was_called = True
