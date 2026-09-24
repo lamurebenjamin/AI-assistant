@@ -1,8 +1,8 @@
-# -*- coding: utf-8 -*-
 """Thread d'interrogation de nvidia-smi pour l'état du GPU, VRAM et températures."""
 
 import subprocess
 import sys
+
 from PySide6.QtCore import QThread, Signal
 
 

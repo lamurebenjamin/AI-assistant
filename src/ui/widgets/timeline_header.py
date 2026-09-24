@@ -1,15 +1,21 @@
 """Reusable collapsible timeline header primitives."""
 
 from PySide6.QtCore import (
-    QEasingCurve, QEvent, QPropertyAnimation, QRectF, Qt, Property, Signal, QTimer
+    Property,
+    QEasingCurve,
+    QEvent,
+    QPropertyAnimation,
+    QRectF,
+    Qt,
+    QTimer,
+    Signal,
 )
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QWidget
 
 import src.ui.design_tokens as t
 from src.ui.icons import create_svg_icon
-from src.ui.stylesheet import qss_transparent_surface
-
+from src.ui.stylesheet import qss_timeline_header_title, qss_transparent_surface
 
 CHEVRON_SPACING = 4
 CHEVRON_FONT_SIZE = 18
@@ -153,10 +159,7 @@ class CollapsibleHeader(QWidget):
         if hasattr(self.title_widget, "set_text_color"):
             self.title_widget.set_text_color(color)
         else:
-            self.title_widget.setStyleSheet(
-                f"font-family:{t.FONT_TEXT}; font-size:{t.SIZE_SM}; "
-                f"font-weight:500; color:{color}; background:transparent;"
-            )
+            self.title_widget.setStyleSheet(qss_timeline_header_title(color))
 
     def set_animation(self, active: bool) -> None:
         self._animating = bool(active)

@@ -1,6 +1,7 @@
 # Interface native, raccourcis et audio
 -r requirements.txt
 PySide6
+PySide6-Fluent-Widgets
 keyboard
 pyperclip
 sounddevice

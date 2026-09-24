@@ -3,7 +3,6 @@
 import keyboard
 from PySide6.QtCore import QTimer
 
-from src.config.schema import LOGGER
 from src.platform.foreground import is_adobe_reader_foreground
 
 
@@ -42,30 +41,13 @@ class VoiceHotkeyManager:
 # ==========================================
 # THREAD LLAMA.CPP
 # ==========================================
-from src.llm.client import LlamaThread
 
 # ==========================================
 # ANALYSE LOCALE DE DOCUMENTS — PDF / IMAGES
 # ==========================================
-from src.documents.pdf_utils import (
-    normalize_page_selection as _normalize_page_selection,
-    extract_pdf_context as _extract_pdf_context,
-    open_pdf_at_page as _open_pdf_at_page,
-)
-from src.documents.payload_builder import (
-    document_image_data_url as _document_image_data_url,
-    prepare_document_payload as _prepare_document_payload,
-)
-from src.documents.thread import DocumentAnalysisThread
 
 
-from src.ui.widgets.chat_bubble import SourceZoomTextBrowser, ChatBubble
-from src.ui.widgets.animated_buttons import AnimatedComposerButton
-from src.ui.widgets.attachment_widget import AttachmentPreviewWidget
-from src.ui.widgets.message_editor import MessageTextEdit
-from src.ui.widgets.thinking_dots import ThinkingDots
 
-from src.ui.windows.document_dialog import DocumentDialog
 
 
 class MenuHotkeyManager:
@@ -132,7 +114,7 @@ class NumericHotkeyManager:
     def _register(self, suppress):
         self._unregister()
         self.suppressed = suppress
-        for i in range(0, 10):
+        for i in range(10):
             # Ctrl+9 est réservé à l'analyse documentaire : il est toujours
             # supprimé du logiciel au premier plan pour éviter, par exemple,
             # le raccourci Ctrl+9 d'un navigateur ou d'un autre logiciel.
@@ -144,7 +126,7 @@ class NumericHotkeyManager:
             )
 
     def _unregister(self):
-        for i in range(0, 10):
+        for i in range(10):
             try:
                 keyboard.remove_hotkey(f'ctrl+{i}')
             except (KeyError, ValueError):

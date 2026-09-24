@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from xml.sax.saxutils import escape
 
 from reportlab.lib.colors import HexColor
 from reportlab.lib.enums import TA_LEFT
@@ -9,10 +9,9 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
-from xml.sax.saxutils import escape
 
 
-def create_pdf(filename: str, title: str, paragraphs: List[str]) -> str:
+def create_pdf(filename: str, title: str, paragraphs: list[str]) -> str:
     """Cree un PDF dans output/ et retourne son chemin absolu."""
     project_root = Path(__file__).resolve().parents[2]
     output_dir = project_root / "output"

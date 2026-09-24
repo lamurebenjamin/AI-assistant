@@ -1,8 +1,16 @@
 {
-    "theme": "light",
+    "theme": "dark",
     "hotkeys_enabled": true,
     "api_url": "http://127.0.0.1:8080/v1/chat/completions",
     "llm_max_tokens": 8192,
+    "skills": {
+        "ftnc": {
+            "fichier_ftnc": "",
+            "feuille_ftnc": "Données consolidées",
+            "fichier_suivi_euro": "",
+            "feuille_suivi_euro": "SUIVI"
+        }
+    },
     "llama_server": {
         "auto_start": true,
         "executable": "llama-server.exe",
@@ -38,7 +46,7 @@
             "--spec-draft-type-v",
             "q8_0",
             "--reasoning-budget",
-            "256",
+            "256ç",
             "-b",
             "512",
             "--temp",

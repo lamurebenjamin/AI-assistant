@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Blocs QSS partagés entre toutes les fenêtres de l'application.
 
 Chaque fonction retourne une chaîne QSS prête à être concaténée dans
@@ -7,7 +6,27 @@ un appel ``setStyleSheet()``. Utilise dynamiquement les tokens de
 """
 
 import src.ui.design_tokens as t
+from src.ui.stylesheet_document import (
+    qss_ctrl9_preview,
+    qss_document_dialog,
+    qss_document_page_dash,
+    qss_document_page_editor,
+    qss_document_page_name,
+    qss_document_preview_dialog,
+    qss_tool_call_step,
+    qss_tool_code_browser,
+)
 
+__all__ = [
+    "qss_ctrl9_preview",
+    "qss_document_dialog",
+    "qss_document_page_dash",
+    "qss_document_page_editor",
+    "qss_document_page_name",
+    "qss_document_preview_dialog",
+    "qss_tool_call_step",
+    "qss_tool_code_browser",
+]
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Blocs atomiques
@@ -64,8 +83,8 @@ def qss_header_icon_button(object_name: str = "HeaderIconButton") -> str:
         }}
         QPushButton#{object_name}:focus {{
             background-color: {t.COLOR_HOVER_DARK};
-            border: 1px solid {t.COLOR_PRIMARY};
-            outline: none;
+            border: none;
+            outline: none; /* Focus ring intentionally disabled; token retained for documentation: {t.COLOR_PRIMARY} */
             border-radius: {t.RADIUS_XL};
         }}
         QPushButton#{object_name}:disabled {{
@@ -258,7 +277,7 @@ def qss_buttons() -> str:
         QPushButton:hover  {{ background-color: {t.COLOR_HOVER_DARK}; }}
         QPushButton:pressed {{ background-color: {t.COLOR_PRESS_DARK}; }}
         QPushButton:focus {{
-            border: 1px solid {t.COLOR_PRIMARY};
+            border: 1px solid transparent; /* Focus ring intentionally disabled; token retained for documentation: {t.COLOR_PRIMARY} */
         }}
         QPushButton:disabled {{
             color: {t.COLOR_TEXT_MUTED};
@@ -268,7 +287,7 @@ def qss_buttons() -> str:
 
         QPushButton#SaveBtn {{
             background-color: {t.COLOR_PRIMARY};
-            color: {t.COLOR_TEXT_ACTIVE};
+            color: {t.COLOR_PRIMARY_TEXT};
             border: 1px solid {t.COLOR_PRIMARY};
             border-radius: {t.RADIUS_LG};
             padding: 7px 18px;
@@ -323,6 +342,7 @@ def qss_tool_button() -> str:
         QPushButton#ToolButton:focus {{
             background-color: {t.COLOR_HOVER_DARK};
             outline: none;
+            border: none; /* Focus ring intentionally disabled; token retained for documentation: {t.COLOR_PRIMARY} */
         }}
         QPushButton#ToolButton:disabled {{ background-color: transparent; }}
     """
@@ -565,11 +585,6 @@ def qss_slash_header() -> str:
     """
 
 
-from src.ui.stylesheet_document import (
-    qss_document_page_name, qss_document_page_editor, qss_document_page_dash,
-    qss_ctrl9_preview, qss_document_dialog, qss_document_preview_dialog,
-    qss_tool_call_step, qss_tool_code_browser,
-)
 
 
 def qss_document_attachment_scroll() -> str:
@@ -626,6 +641,111 @@ def qss_assistant_body() -> str:
             font-style: italic;
         }}
     """
+
+
+def qss_scrollbar_hidden_horizontal() -> str:
+    """Masque la barre de défilement horizontale."""
+    return "QScrollBar:horizontal { height: 0; }"
+
+
+def qss_tool_group_header(muted_color: str | None = None) -> str:
+    """En-tête de groupe d'exécution d'outil."""
+    color = muted_color or t.COLOR_TEXT_MUTED
+    return f"""
+        font-family: {t.FONT_TEXT};
+        font-size: {t.SIZE_SM};
+        font-weight: 500;
+        color: {color};
+        background: transparent;
+    """
+
+
+def qss_tool_steps_container() -> str:
+    """Conteneur des étapes d'outil avec ligne verticale."""
+    return f"background: transparent; border-left: 1px solid {t.COLOR_BORDER};"
+
+
+def qss_thinking_details(font_size: int = 13) -> str:
+    """Détails de pensée (thinking process) dépliables."""
+    return (
+        f"background: transparent; border-left: 1px solid {t.COLOR_BORDER}; "
+        "margin-left: 7px; "
+        f"padding: 0 8px 2px 10px; font-family: {t.FONT_TEXT}; "
+        f"font-size: {font_size}px; font-style: italic; "
+        f"color: {t.COLOR_TEXT_SECONDARY};"
+    )
+
+
+def qss_skill_tag_title(
+    color: str = "", font_size: int = 11, weight: int = 600
+) -> str:
+    """Libellé de badge de skill actif."""
+    text_color = color or t.COLOR_TEXT_PRIMARY
+    return (
+        f"color: {text_color}; font-family: {t.FONT_TEXT}; "
+        f"font-size: {font_size}px; font-weight: {weight}; background: transparent;"
+    )
+
+
+def qss_skill_tag_frame() -> str:
+    """Contour de badge de skill avec fond teinté."""
+    return (
+        f"QFrame#SkillTag {{ background: {t.COLOR_PRIMARY_LIGHT}; "
+        f"border: 1px solid {t.COLOR_PRIMARY_BORDER}; "
+        f"border-radius: {t.RADIUS_MD}; }}"
+    )
+
+
+def qss_timeline_connector() -> str:
+    """Ligne de connexion verticale pour la timeline d'étapes."""
+    return f"color: {t.COLOR_BORDER}; background: {t.COLOR_BORDER};"
+
+
+def qss_timeline_header_title(color: str) -> str:
+    """Titre d'un en-tête d'étape ou de groupe de pensée."""
+    return (
+        f"font-family: {t.FONT_TEXT}; font-size: {t.SIZE_SM}; "
+        f"font-weight: 500; color: {color}; background: transparent;"
+    )
+
+
+def qss_voice_recording_indicator() -> str:
+    """Style complet de l'indicateur de saisie vocale."""
+    return (
+        build_acrylic_window_qss()
+        + f"""
+        QLabel#VoiceText, QLabel#VoiceClock {{
+            background: transparent;
+            color: {t.COLOR_TEXT_PRIMARY};
+            border: none;
+            font-family: {t.FONT_TEXT};
+            font-size: {t.SIZE_LG};
+        }}
+        QLabel#VoiceClock {{ color: {t.COLOR_TEXT_MUTED}; }}
+        """
+    )
+
+
+def qss_status_label(
+    color: str, size: str, weight: int = 500, italic: bool = False
+) -> str:
+    """Style d'étiquette de statut avec ton et graisse dynamiques."""
+    font_style = "italic" if italic else "normal"
+    return (
+        f"color: {color}; font-weight: {weight}; "
+        f"font-size: {size}; font-style: {font_style}; background: transparent;"
+    )
+
+
+def qss_shimmer_status_label(font_offset: int = 0) -> str:
+    """Style du libellé animé scintillant de progression."""
+    size = int(t.SIZE_SM.rstrip("px")) + font_offset
+    return f"font-family: {t.FONT_TEXT}; font-size: {size}px; background: transparent;"
+
+
+def qss_slash_icon_label() -> str:
+    """Icône de menu slash transparente."""
+    return f"font-size: 14px; {qss_transparent_surface()}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

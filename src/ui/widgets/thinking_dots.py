@@ -1,6 +1,7 @@
 """Indicateur animé de réflexion (dots ondulants) avant le premier token généré."""
 
 import math
+
 from PySide6.QtCore import QPointF, QSize, Qt, QTimer
 from PySide6.QtGui import (
     QColor,

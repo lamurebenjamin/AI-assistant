@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Moteur de rendu et conversion Markdown vers HTML et texte parlé."""
 
 import base64

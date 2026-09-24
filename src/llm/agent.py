@@ -1,11 +1,9 @@
-# -*- coding: utf-8 -*-
 """Logique décisionnelle de l'Agent IA pour l'appel et l'exécution d'outils."""
 
 import re
-from typing import List, Tuple
 
 # Termes déclencheurs d'actions et d'artefacts
-ACTION_TERMS: Tuple[str, ...] = (
+ACTION_TERMS: tuple[str, ...] = (
     "crée",
     "créer",
     "créé",
@@ -33,7 +31,7 @@ ACTION_TERMS: Tuple[str, ...] = (
     "mets à jour le fichier",
 )
 
-ARTIFACT_TERMS: Tuple[str, ...] = (
+ARTIFACT_TERMS: tuple[str, ...] = (
     "fichier",
     "document",
     "word",

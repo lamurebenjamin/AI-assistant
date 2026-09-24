@@ -22,8 +22,13 @@ class ServerManagerTests(unittest.TestCase):
                 self.assertTrue(ok)
                 self.assertIn("42", message)
                 self.assertEqual(popen.call_args.kwargs["cwd"], directory)
+                command = popen.call_args.args[0]
+                self.assertEqual(command[-2], "--api-key")
+                self.assertTrue(manager.auth_token)
+                self.assertNotIn(manager.auth_token, message)
                 self.assertEqual(manager.start({}), (True, "Serveur déjà démarré"))
             manager.stop()
+            self.assertIsNone(manager.auth_token)
 
     def test_start_missing_files_and_popen_error(self):
         manager = LlamaServerManager()

@@ -1,6 +1,6 @@
+import importlib
 import tempfile
 import unittest
-import importlib
 from pathlib import Path
 
 from core.skill_manager import SkillError, SkillManager
@@ -62,6 +62,43 @@ class SkillManagerTests(unittest.TestCase):
             (skills / "broken").mkdir()
             (skills / "broken" / "skill.py").write_text("x = 1", encoding="utf-8")
             self.assertEqual(SkillManager(Path(directory) / "skills").discover(), [])
+
+    def test_fastmcp_skill_and_unified_server(self):
+        from core.mcp_compat import MCP_AVAILABLE
+        if not MCP_AVAILABLE:
+            self.skipTest("mcp library not available")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "skills"
+            root.mkdir()
+            (root / "__init__.py").write_text("", encoding="utf-8")
+            pkg = root / "mcpdemo"
+            pkg.mkdir()
+            (pkg / "__init__.py").write_text("", encoding="utf-8")
+            (pkg / "skill.py").write_text(
+                "from core.mcp_compat import FastMCP\n"
+                "mcp = FastMCP('mcpdemo')\n"
+                "@mcp.tool(name='mcp_multiply', description='Multiplie deux entiers.')\n"
+                "def mcp_multiply(a: int, b: int) -> int:\n"
+                "    return a * b\n"
+                "class McpdemoSkill:\n"
+                "    name = 'mcpdemo'\n"
+                "    mcp = mcp\n",
+                encoding="utf-8",
+            )
+            import sys
+            for m in list(sys.modules):
+                if m == "skills" or m.startswith("skills."):
+                    del sys.modules[m]
+            importlib.invalidate_caches()
+            manager = SkillManager(root)
+            discovered = manager.discover()
+            self.assertIn("mcpdemo", discovered)
+            self.assertIn("mcp_multiply", manager.tools)
+            res = manager.execute_tool("mcp_multiply", {"a": 6, "b": 7})
+            self.assertEqual(res, 42)
+            unified = manager.get_unified_mcp_server("Test-Server")
+            self.assertIsNotNone(unified)
 
 
 if __name__ == "__main__":

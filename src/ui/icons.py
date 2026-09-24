@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Générateur et registre central des icônes de l'application.
 
 Les icônes vectorielles sont générées dynamiquement via ``create_svg_icon``
@@ -186,6 +185,15 @@ def get_default_tool_icon() -> QIcon:
 # ─────────────────────────────────────────────────────────────────────────────
 #  Chemins SVG partagés (pour éviter la duplication dans initialize_icons)
 # ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+#  RÈGLE ICÔNES — Source unique pour toute l'application
+#  ─────────────────────────────────────────────────────────────────────────────
+#  • Tous les chemins SVG DOIVENT être déclarés dans _SVG (viewBox 0 0 24 24).
+#  • Les épaisseurs non-standard DOIVENT être listées dans _DARK_STROKE.
+#  • AnimatedComposerButton et AnimatedHeaderButton lisent ICONS_DARK au rendu.
+#  • Pour ajouter une icône : 1) ajouter le path dans _SVG  2) optionnel : ajuster
+#    _DARK_STROKE  3) relancer tests/test_icon_consistency.py
+# ──────────────────────────────────────────────────────────────────────────────
 _SVG = {
     "add":        '<path d="M12 5v14M5 12h14"/>',
     "delete":     '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
@@ -202,16 +210,21 @@ _SVG = {
     "speak":        '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18 6a8.5 8.5 0 0 1 0 12"/>',
     "speak_filled": '<path d="M11 5L6 9H2v6h4l5 4V5z" fill="theme"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18 6a8.5 8.5 0 0 1 0 12"/>',
     "stop":         '<rect x="6" y="6" width="12" height="12" rx="1"/>',
+    # Icônes du compositeur
+    "mic":  '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8"/>',
+    "send": '<path d="m3 3 3 9-3 9 19-9z"/><path d="M6 12h16"/>',
 }
 
 # Épaisseurs de trait spécifiques (dark only)
 _DARK_STROKE = {
     "copy":         1.4,
     "check":        2.2,
-    "close":        1.2,
+    "close":        1.4,  # identique dans Ctrl+7 et Ctrl+9
     "speak":        1.6,
     "speak_filled": 2.0,
     "stop":         1.6,
+    "mic":          1.6,
+    "send":         1.5,
 }
 
 

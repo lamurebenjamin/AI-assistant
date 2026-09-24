@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
@@ -18,7 +18,7 @@ def _project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _template_path(template_name: Optional[str]) -> Path:
+def _template_path(template_name: str | None) -> Path:
     name = Path(str(template_name or DEFAULT_TEMPLATE_NAME).strip()).name
     if not name.lower().endswith(".pptx"):
         name += ".pptx"
@@ -92,7 +92,7 @@ def _set_title(shape, text: str, fallback: bool = False) -> None:
         p.font.color.rgb = RGBColor(31, 78, 120)
 
 
-def _set_list(shape, values: List[Any], fallback: bool = False) -> None:
+def _set_list(shape, values: list[Any], fallback: bool = False) -> None:
     frame = shape.text_frame
     frame.clear()
     frame.word_wrap = True
@@ -133,8 +133,8 @@ def create_pptx(
     filename: str,
     title: str,
     subtitle: str,
-    slides: List[Dict[str, Any]],
-    template_name: Optional[str] = None,
+    slides: list[dict[str, Any]],
+    template_name: str | None = None,
 ) -> str:
     """Cree un PPTX. Le slide 1 est la couverture et le slide 2 le sommaire."""
     items = slides or []
@@ -142,7 +142,7 @@ def create_pptx(
         if not isinstance(item, dict) or "title" not in item or "bullets" not in item:
             raise ValueError(f"La diapositive {index} doit contenir 'title' et 'bullets'.")
         if not isinstance(item["bullets"], list):
-            raise ValueError(f"Le champ 'bullets' de la diapositive {index} doit etre une liste.")
+            raise TypeError(f"Le champ 'bullets' de la diapositive {index} doit etre une liste.")
 
     presentation = Presentation(str(_template_path(template_name)))
     if len(presentation.slides) < 2:

@@ -11,11 +11,11 @@ from src.app.hotkey_managers import (
     NumericHotkeyManager,
     VoiceHotkeyManager,
 )
-from src.config.schema import LOG_FORMAT, LOGGER
 from src.config.manager import load_config
+from src.config.schema import LOG_FORMAT, LOGGER
 from src.llm.server_manager import get_server_manager
 from src.ui.icons import initialize_icons
-from src.ui.theme import apply_app_theme
+from src.ui.theme import apply_app_theme, install_system_theme_listener
 from src.ui.tray import create_tray_icon
 from src.ui.windows.assistant_window import AssistantWindow
 
@@ -36,6 +36,7 @@ def run() -> int:
     cfg = load_config()
     theme_name = cfg.get("theme", "dark")
     apply_app_theme(app, theme_name)
+    app.theme_listener = install_system_theme_listener(app)
     app.setApplicationName("Assistant IA")
     app.setApplicationDisplayName("Assistant IA")
     app.setQuitOnLastWindowClosed(False)
@@ -43,6 +44,7 @@ def run() -> int:
     initialize_icons()
     assistant = AssistantWindow()
     server_manager = get_server_manager()
+    app.aboutToQuit.connect(assistant.shutdown_background_threads)
     app.aboutToQuit.connect(server_manager.stop)
 
     if QSystemTrayIcon.isSystemTrayAvailable():

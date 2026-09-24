@@ -1,14 +1,32 @@
 from __future__ import annotations
 
-from .generator import Nouveau_Document
+from core.mcp_compat import FastMCP
+
+from .generator import Nouveau_Document as _generate_docx
+
+mcp = FastMCP("docx")
+
+
+@mcp.tool(
+    name="Nouveau_Document",
+    description=(
+        "Crée un document Microsoft Word (.docx) dans le dossier output du projet "
+        "à partir d'un titre et de paragraphes. Utilise cet outil lorsque l'utilisateur "
+        "demande réellement de créer un fichier Word."
+    ),
+)
+def Nouveau_Document(filename: str, title: str, paragraphs: list[str]) -> str:
+    """Crée un document Word dans output/ et retourne son chemin absolu."""
+    return _generate_docx(filename=filename, title=title, paragraphs=paragraphs)
 
 
 class DocxSkill:
-    """Skill de création de documents Microsoft Word."""
+    """Skill de création de documents Microsoft Word basé sur FastMCP."""
 
     name = "docx"
     display_name = "Word"
     icon = "icon.svg"
+    mcp = mcp
 
     def get_tools(self):
         return [

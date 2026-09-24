@@ -1,9 +1,11 @@
 """Compositeur de message partagé (champ, micro, envoi, pièces jointes)."""
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
+from qfluentwidgets import BodyLabel
 
 import src.ui.design_tokens as t
+from src.ui.fluent_compat import install_tooltip
 from src.ui.widgets.animated_buttons import AnimatedComposerButton
 from src.ui.widgets.audio_bars import ScrollingAudioBars
 from src.ui.widgets.message_editor import MessageTextEdit
@@ -32,7 +34,7 @@ class ComposerBar(QFrame):
         row.setSpacing(0)
 
         self.add_button = AnimatedComposerButton("add")
-        self.add_button.setToolTip("Ajouter un document ou lancer une skill")
+        install_tooltip(self.add_button, "Ajouter un document ou lancer une skill")
 
         self.skill_tag = SkillTag(
             self, font_size_offset=font_size_offset, framed=True
@@ -55,12 +57,12 @@ class ComposerBar(QFrame):
         self.audio_bars.setFocusPolicy(Qt.NoFocus)
         self.skill_tag.setFocusPolicy(Qt.NoFocus)
         self.mic = AnimatedComposerButton("mic")
-        self.mic.setToolTip("Dicter")
+        install_tooltip(self.mic, "Dicter")
         self.send = AnimatedComposerButton("send")
-        self.send.setToolTip("Envoyer")
+        install_tooltip(self.send, "Envoyer")
         self.send.hide()
         self.stop_generation_button = AnimatedComposerButton("stop")
-        self.stop_generation_button.setToolTip("Arrêter la génération")
+        install_tooltip(self.stop_generation_button, "Arrêter la génération")
         self.stop_generation_button.hide()
 
         row.addWidget(self.add_button, 0, Qt.AlignVCenter)
@@ -78,7 +80,7 @@ class ComposerBar(QFrame):
         QWidget.setTabOrder(self.mic, self.send)
         QWidget.setTabOrder(self.send, self.stop_generation_button)
 
-        self.drop_feedback = QLabel("Déposer pour ajouter le document", self)
+        self.drop_feedback = BodyLabel("Déposer pour ajouter le document", self)
         self.drop_feedback.setAlignment(Qt.AlignCenter)
         self.drop_feedback.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.drop_feedback.setFocusPolicy(Qt.NoFocus)

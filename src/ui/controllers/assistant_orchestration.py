@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication
 from src.audio.recorder import AudioRecorderThread
 from src.config.manager import save_config
 from src.config.schema import DEFAULT_CONFIG, LOGGER
+from src.llm.server_manager import get_server_manager
 from src.monitoring.server_status import ServerStatusThread
 from src.rendering.markdown import markdown_to_spoken_text
 from src.tts.thread import KokoroTtsThread
@@ -45,7 +46,11 @@ class AssistantOrchestrationController:
             return
         if host.startup_status_thread is not None and host.startup_status_thread.isRunning():
             return
-        host.startup_status_thread = ServerStatusThread(host.config.get("api_url", ""), host)
+        host.startup_status_thread = ServerStatusThread(
+            host.config.get("api_url", ""),
+            host,
+            get_server_manager().auth_token,
+        )
         host.startup_status_thread.status_checked.connect(self.handle_startup_server_status)
         host.startup_status_thread.finished.connect(self.on_startup_status_finished)
         host.startup_status_thread.start()
@@ -187,7 +192,7 @@ class AssistantOrchestrationController:
             )
             fallback = voice.get("input_device")
             return fallback if isinstance(fallback, int) and fallback >= 0 else None
-        except Exception:
+        except Exception:  # noqa: BLE001
             LOGGER.exception("Erreur inattendue lors de l'interrogation des périphériques audio")
             return None
 

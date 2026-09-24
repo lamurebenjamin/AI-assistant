@@ -24,6 +24,11 @@ class ContractsAndQualityTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_tool_call_widget_uses_default_module_size_threshold(self):
+        root = Path(__file__).resolve().parents[1]
+        source = root / "src" / "ui" / "widgets" / "tool_call_widget.py"
+        self.assertLessEqual(len(source.read_text(encoding="utf-8").splitlines()), 500)
+
 
 if __name__ == "__main__":
     unittest.main()

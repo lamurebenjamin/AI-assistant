@@ -4,10 +4,8 @@ import html
 import os
 import sys
 
-from PySide6.QtCore import QTimer
-from src.config.schema import APP_DIR
-from src.rendering.markdown import markdown_to_html
 import src.ui.design_tokens as t
+from src.config.schema import APP_DIR
 
 
 class AssistantResponseRenderer:

@@ -1,15 +1,18 @@
 """Libellés de statut sémantiques (succès, erreur, attente)."""
 
-from PySide6.QtWidgets import QLabel
+from qfluentwidgets import BodyLabel
 
 import src.ui.design_tokens as t
+from src.ui.stylesheet import qss_status_label
 
 
-class StatusLabel(QLabel):
-    """QLabel dont la couleur suit un ton sémantique du thème actif."""
+class StatusLabel(BodyLabel):
+    """BodyLabel (QFluentWidgets) dont la couleur suit un ton sémantique du thème actif."""
 
     def __init__(self, text="", parent=None, tone: str = "muted", weight: int = 600):
-        super().__init__(text, parent)
+        super().__init__(parent=parent)
+        if text:
+            self.setText(text)
         self._tone = tone
         self._weight = weight
         self._italic = False
@@ -41,8 +44,4 @@ class StatusLabel(QLabel):
         }
         color = colors.get(self._tone, t.COLOR_TEXT_SECONDARY)
         size = self._size or t.SIZE_MD
-        italic = "italic" if self._italic else "normal"
-        self.setStyleSheet(
-            f"color: {color}; font-weight: {self._weight}; "
-            f"font-size: {size}; font-style: {italic}; background: transparent;"
-        )
+        self.setStyleSheet(qss_status_label(color, size, self._weight, self._italic))

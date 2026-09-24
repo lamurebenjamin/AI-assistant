@@ -1,8 +1,6 @@
 """Fenêtre d'analyse et de dialogue documentaire (PDF, images, texte)."""
 
-import base64
 import html
-import json
 import os
 import re
 import tempfile
@@ -23,9 +21,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QColor,
-    QAction,
     QFont,
-    QIcon,
     QPainter,
     QPainterPath,
     QPen,
@@ -41,12 +37,17 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMenu,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
+)
+from qfluentwidgets import (
+    Action as FluentAction,
+)
+from qfluentwidgets import (
+    RoundMenu,
+    SmoothScrollArea,
 )
 
 try:
@@ -57,35 +58,29 @@ except ImportError:
     except ImportError:
         fitz = None
 
-from src.config.schema import APP_DIR, LOGGER
 import src.ui.design_tokens as t
+from core.skill_manager import SkillManager
+from src.config.schema import LOGGER
+from src.ui.fluent_compat import install_tooltip
 from src.ui.icons import create_svg_icon, get_application_icon, get_default_tool_icon
 from src.ui.stylesheet import (
-    qss_document_preview_dialog,
     qss_document_dialog,
+    qss_document_preview_dialog,
     qss_response_scroll_area,
-    qss_turn_navigation,
     qss_transparent_surface,
-    qss_menu,
+    qss_turn_navigation,
 )
 from src.ui.theme import apply_acrylic_blur, apply_rounded_corners
 from src.ui.widgets.animated_buttons import AnimatedComposerButton
-from src.ui.widgets.document_attachment_preview import DocumentAttachmentPreview
-from src.ui.widgets.audio_bars import ScrollingAudioBars
-from src.ui.widgets.chat_bubble import ChatBubble
 from src.ui.widgets.composer_bar import ComposerBar
+from src.ui.widgets.document_attachment_preview import DocumentAttachmentPreview
 from src.ui.widgets.hairline import HairlineSeparator
-from src.ui.widgets.message_editor import MessageTextEdit
-from src.ui.widgets.thinking_dots import ShimmerLabel
-from src.ui.widgets.tool_call_widget import ThinkingGroupWidget, ToolExecutionGroupWidget
 from src.ui.widgets.slash_command_popup import SlashCommandPopup
 from src.ui.widgets.window_chrome import WindowChrome
 from src.ui.windows.conversation_controller import ConversationController
-from src.ui.windows.document_response_controller import DocumentResponseController
 from src.ui.windows.document_composer_controller import DocumentComposerController
 from src.ui.windows.document_conversation_renderer import DocumentConversationRenderer
-from src.audio.recorder import AudioRecorderThread
-from core.skill_manager import SkillManager
+from src.ui.windows.document_response_controller import DocumentResponseController
 
 
 class DocumentDialog(QDialog):
@@ -240,7 +235,7 @@ class DocumentDialog(QDialog):
         self.header.mouseMoveEvent = self._header_move
         self.header.mouseReleaseEvent = self._header_release
         close = AnimatedComposerButton("close", self.header)
-        close.setToolTip("Fermer")
+        install_tooltip(close, "Fermer")
         close.clicked.connect(self.reject)
         self.header.add_action(close)
         root.addWidget(self.header)
@@ -277,7 +272,7 @@ class DocumentDialog(QDialog):
         # Une vraie pile de widgets remplace le tableau HTML unique. Les QFrame
         # prennent correctement en charge border-radius, contrairement aux cellules
         # de tableau du moteur HTML de QTextDocument.
-        self.response=QScrollArea(self.content_widget)
+        self.response=SmoothScrollArea(self.content_widget)
         self.response.setObjectName("Response")
         self.response.setWidgetResizable(True)
         self.response.setFrameShape(QFrame.NoFrame)
@@ -408,7 +403,7 @@ class DocumentDialog(QDialog):
         dialog.setStyleSheet(qss_document_preview_dialog())
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(10, 10, 10, 10)
-        scroll = QScrollArea(dialog)
+        scroll = SmoothScrollArea(dialog)
         scroll.setWidgetResizable(False)
         scroll.setAlignment(Qt.AlignCenter)
         label = QLabel()
@@ -473,7 +468,7 @@ class DocumentDialog(QDialog):
                             self._temp_files.add(preview_path)
                         finally:
                             doc.close()
-                    except Exception:
+                    except Exception:  # noqa: BLE001
                         LOGGER.exception("Impossible de générer la vignette jointe du PDF")
                         preview_path = ""
 
@@ -753,23 +748,14 @@ class DocumentDialog(QDialog):
         paths=self._dragged_paths(event); self._set_drop_feedback(False)
         if paths:self._add_paths(paths); event.acceptProposedAction()
         else:event.ignore()
-    def _create_add_menu(self) -> QMenu:
-        menu = QMenu(self)
+    def _create_add_menu(self) -> RoundMenu:
+        menu = RoundMenu(parent=self)
         menu.setObjectName("ComposerAddMenu")
-        menu.setAttribute(Qt.WA_TranslucentBackground, False)
-        menu.setAutoFillBackground(True)
-        menu.setStyleSheet(
-            qss_menu(
-                "ComposerAddMenu",
-                font_size=f"{int(t.SIZE_MD.rstrip('px')) + self.FONT_SIZE_OFFSET}px",
-                selected_as_primary=True,
-                padding=6,
-            )
-        )
 
         # 1. Option Ajouter un PDF ou une image
-        act_add_file = menu.addAction("Ajouter un PDF ou une image")
+        act_add_file = FluentAction("Ajouter un PDF ou une image")
         act_add_file.triggered.connect(self._choose_files)
+        menu.addAction(act_add_file)
 
         # 2. Séparateur
         menu.addSeparator()
@@ -798,32 +784,38 @@ class DocumentDialog(QDialog):
             "create_docx": "Créer un document Word",
             "create_excel": "Créer un classeur Excel",
             "create_pptx": "Créer une présentation PowerPoint",
+            "Liste": "Liste des FTNC",
+            "Details": "Détails d'une FTNC",
+            "Détails": "Détails d'une FTNC",
         }
 
         for skill_name in discovered_skills:
             skill_display = skill_titles.get(skill_name, f"Skill {skill_name.capitalize()}")
-            sub_menu = menu.addMenu(skill_display)
+            sub_menu = RoundMenu(skill_display, parent=menu)
             sub_menu.setObjectName("ComposerAddMenu")
-            sub_menu.setStyleSheet(menu.styleSheet())
 
             skill_tools = [
                 t for t in skill_mgr.tools.values()
                 if t.get("skill") == skill_name
             ]
             if not skill_tools:
-                act_none = sub_menu.addAction("Aucune action disponible")
+                act_none = FluentAction("Aucune action disponible")
                 act_none.setEnabled(False)
+                sub_menu.addAction(act_none)
             else:
                 for tool in skill_tools:
                     t_name = tool.get("name", "")
                     t_desc = tool.get("description", "")
                     t_title = tool_titles.get(t_name, t_name.replace("_", " ").capitalize())
-                    act_tool = sub_menu.addAction(t_title)
+                    act_tool = FluentAction(t_title)
                     if t_desc:
                         act_tool.setToolTip(t_desc)
                     act_tool.triggered.connect(
-                        lambda checked, s=skill_name, t=t_name: self._on_skill_tool_selected(s, t)
+                        lambda checked=False, s=skill_name, t=t_name: self._on_skill_tool_selected(s, t)
                     )
+                    sub_menu.addAction(act_tool)
+
+            menu.addMenu(sub_menu)
 
         return menu
 

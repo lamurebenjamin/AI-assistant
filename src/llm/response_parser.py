@@ -1,8 +1,6 @@
-# -*- coding: utf-8 -*-
 """Parseurs et nettoyeurs de réponses générées par le LLM."""
 
 import re
-from typing import Tuple
 
 CLEAN_TOKENS = (
     "<|end|>",
@@ -30,7 +28,7 @@ def clean_thinking_text(text: str) -> str:
     return re.sub(r"(?im)^\s*thinking\s+process\s*:\s*", "", text)
 
 
-def split_thinking_and_answer(raw_text: str) -> Tuple[str, str]:
+def split_thinking_and_answer(raw_text: str) -> tuple[str, str]:
     """Retourne ``(raisonnement, réponse)`` après extraction des balises ``think``."""
     normalized = re.sub(r"</think>\s*<think>", "", raw_text, flags=re.IGNORECASE)
     thinking_parts = []
@@ -53,7 +51,7 @@ def split_thinking_and_answer(raw_text: str) -> Tuple[str, str]:
     return thinking.strip(), answer.strip()
 
 
-def parse_audio_response(raw_text: str) -> Tuple[str, str]:
+def parse_audio_response(raw_text: str) -> tuple[str, str]:
     """Retourne ``(transcription, réponse)`` en tolérant les balises incomplètes."""
     transcript = ""
     transcript_match = re.search(

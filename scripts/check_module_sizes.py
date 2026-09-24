@@ -1,7 +1,7 @@
 """Check source module sizes while allowing documented orchestration modules."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOTS = (ROOT / "src", ROOT / "core", ROOT / "skills")
@@ -11,8 +11,7 @@ ALLOWED_LARGE_MODULES = {
     "src/ui/windows/document_conversation_renderer.py": 550,
     "src/ui/windows/assistant_window.py": 1600,
     "src/ui/windows/settings_dialog.py": 800,
-    "src/ui/stylesheet.py": 700,
-    "src/ui/widgets/tool_call_widget.py": 700,
+    "src/ui/stylesheet.py": 800,
 }
 
 violations = []

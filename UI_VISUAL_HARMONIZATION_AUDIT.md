@@ -1,6 +1,6 @@
 # Audit d'harmonisation visuelle
 
-Date : 2026-09-22
+Date : 2026-09-24
 Périmètre : `src/ui/`, rendu Markdown, tokens, QSS, thèmes, états
 interactifs, assets de skills et tests associés.
 
@@ -12,7 +12,7 @@ Windows restant manuelle.**
 Le design system est maintenant réellement utilisé : tokens paritaires
 clair/sombre, helpers QSS, composants partagés (`WindowChrome`, `ComposerBar`,
 `StatusLabel`, `SkillTag`, `HairlineSeparator`) et API `refresh_theme()`.
-La couverture de tests a fortement progressé : **53 tests passent** avec
+La couverture de tests a fortement progressé : **108 tests passent** avec
 l'interpréteur du projet (`.venv`).
 
 Les styles locaux restants sont documentés et limités au contenu dynamique, aux
@@ -24,13 +24,13 @@ réel.
 
 | Contrôle | Résultat | Commentaire |
 | --- | --- | --- |
-| `.venv\Scripts\python.exe -m unittest discover -s tests -v` | ✅ 53/53 | UI, configuration, skills, parsing LLM, serveur local, threads, contrats et contrôleurs UI. |
+| `.venv\Scripts\python.exe -m unittest discover -s tests -v` | ✅ 108/108 | UI, configuration, skills, parsing LLM, serveur local, authentification locale, threads, contrats et contrôleurs UI. |
 | `.venv\Scripts\python.exe -m compileall -q src core skills main.pyw tests` | ✅ | Aucun échec de compilation. |
 | `python -m compileall -q src core skills main.pyw tests` | ✅ | Aucun échec avec Python système. |
 | `git diff --check -- src/ui tests README.md requirements.txt UI_*.md` | ✅ | Le périmètre audité est propre. |
 | Parité des clés `THEME_DARK` / `THEME_LIGHT` | ✅ | Test automatisé. |
 | Littéraux hex hors `design_tokens.py` | ✅ | Test automatisé. |
-| `python -m unittest discover -s tests -v` (interpréteur système) | ✅ 53/53 | Même suite headless validée avec Python système. |
+| `.venv\Scripts\python.exe -m ruff check .` | ⚠️ Échec | Violations de style Ruff ; aucun test fonctionnel en échec. |
 
 ## Points positifs vérifiés
 
@@ -117,7 +117,7 @@ clair/sombre et vérification des états interactifs.
 
 ### ✅ Résolu — Interpréteurs Python distincts
 
-Le contrôle a été refait le 22/09/2026 avec Python système 3.12.10 après
+Le contrôle a été refait le 24/09/2026 avec l'interpréteur `.venv` après
 installation de PySide6 6.11.2 et des dépendances importées par les fenêtres et
 les skills (`numpy`, `scipy`, `sounddevice`, `requests`, `pandas` et packages
 de génération documentaire). Les quatre classes Qt s'exécutent maintenant
@@ -130,10 +130,11 @@ La commande complète et reproductible de l'audit reste :
 .\.venv\Scripts\python.exe -m compileall -q src core skills main.pyw tests
 ```
 
-`.venv\Scripts\python.exe` produit désormais le résultat complet de 53/53
-tests et reste recommandé pour garantir un
-environnement reproductible ; Python système peut également être utilisé après
-installation des dépendances du projet.
+`.venv\Scripts\python.exe` produit désormais le résultat complet de 108/108
+tests et reste recommandé pour garantir un environnement reproductible.
+Les messages d'erreur audio, TTS et skill invalide apparaissant dans la sortie
+sont des scénarios négatifs attendus et validés ; ils ne font pas échouer la
+suite.
 
 ### ✅ Résolu — Nettoyage des styles de présentation
 
@@ -155,7 +156,7 @@ lorsqu'ils servent uniquement à une composition interne.
 | Focus clavier | ✅ sur le compositeur | Les fenêtres complètes et raccourcis restent à tester manuellement. |
 | Assets skills déclarés | ✅ | Test des cinq skills déclarés. |
 | Markdown commun | ✅ | Test Qt des listes, liens, code et sources. |
-| Contraste et DPI | 🟡 | Non mesurés automatiquement ; validation Windows requise. |
+| Contraste et DPI | 🟡 | Contraste sémantique AA automatisé ; icônes, bordures, DPI et rendu restent à valider sous Windows. |
 
 ## Plan d'amélioration — état actuel
 

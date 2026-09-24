@@ -9,8 +9,15 @@ import tempfile
 import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
+
+try:
+    import fitz
+except ImportError:
+    fitz = None
+
+import src.ui.design_tokens as t
+from src.config.schema import LOGGER
 
 
 class DocumentSourceRenderer:
@@ -75,7 +82,7 @@ class DocumentSourceRenderer:
                     f'<img src="{uri}" width="{display_w}" height="{display_h}" />'
                     f'</a></div></div>'
                 )
-            except Exception: LOGGER.exception("Impossible de générer la capture de la source")
+            except Exception: LOGGER.exception("Impossible de générer la capture de la source")  # noqa: BLE001
         if not cards: return ""
         return ''.join(cards)
 

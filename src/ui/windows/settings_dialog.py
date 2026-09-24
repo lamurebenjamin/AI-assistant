@@ -2,47 +2,69 @@
 
 import copy
 import ctypes
-import json
-import os
 import sys
+
 import sounddevice as sd
-from PySide6.QtCore import QEvent, Qt, QTimer, QSize, Signal
-from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPalette
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
-    QComboBox,
     QDialog,
     QFileDialog,
     QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
-    QListWidget,
     QProgressBar,
-    QPushButton,
     QSizePolicy,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
-from src.config.schema import APP_DIR, DEFAULT_CONFIG, LOGGER
-from src.config.manager import save_config
+# QFluentWidgets : intégration Windows 11 native
+from src.ui.fluent_compat import (
+    CheckBox,
+    ComboBox,
+    LineEdit,
+    ListWidget,
+    PushButton,
+    SpinBox,
+    TextEdit,
+)
+
+# Alias pour compatibilité avec le code existant qui utilise ces noms
+QCheckBox = CheckBox
+QComboBox = ComboBox
+QLineEdit = LineEdit
+QListWidget = ListWidget
+QTextEdit = TextEdit
+QPushButton = PushButton
+QSpinBox = SpinBox
+
 import src.ui.design_tokens as t
+from src.audio.recorder import AudioRecorderThread
+from src.config.manager import save_config
+from src.config.schema import DEFAULT_CONFIG, LOGGER
+from src.llm.server_manager import get_server_manager
+from src.monitoring.nvidia_status import NvidiaStatusThread
+from src.monitoring.server_status import ServerStatusThread
 from src.ui.icons import ICONS, ICONS_DARK
-from src.ui.stylesheet import build_settings_qss, qss_ctrl9_preview, qss_settings_emphasis
-from src.ui.windows.settings_tabs import SettingsTabsBuilder
+from src.ui.stylesheet import (
+    build_settings_qss,
+    qss_ctrl9_preview,
+    qss_settings_emphasis,
+)
 from src.ui.theme import apply_app_theme, apply_rounded_corners
 from src.ui.widgets.animated_buttons import AnimatedHeaderButton
 from src.ui.widgets.hairline import HairlineSeparator
 from src.ui.widgets.status_label import StatusLabel
 from src.ui.widgets.window_chrome import WindowChrome
-from src.audio.recorder import AudioRecorderThread
-from src.monitoring.server_status import ServerStatusThread
-from src.monitoring.nvidia_status import NvidiaStatusThread
-from src.llm.server_manager import get_server_manager
+from src.ui.windows.settings_config import (
+    copy_server_config,
+    normalize_api_url,
+    normalize_server_config,
+)
+from src.ui.windows.settings_tabs import SettingsTabsBuilder
 
 LLAMA_SERVER_MANAGER = get_server_manager()
 class SettingsDialog(QDialog):
@@ -54,8 +76,7 @@ class SettingsDialog(QDialog):
         self.temp_voice_config = copy.deepcopy(config.get('voice_input', DEFAULT_CONFIG['voice_input']))
         self.temp_tts_config = copy.deepcopy(config.get('text_to_speech', DEFAULT_CONFIG['text_to_speech']))
         self.mic_test_thread = None
-        self.temp_server_config = config.get('llama_server', {}).copy()
-        self.temp_server_config['arguments'] = list(self.temp_server_config.get('arguments', []))
+        self.temp_server_config = copy_server_config(config.get("llama_server"))
         self.is_updating_ui = False
         self.drag_position = None
         self.status_thread = None
@@ -121,10 +142,12 @@ class SettingsDialog(QDialog):
         # Organisation des paramètres par domaine fonctionnel.
         tabs = SettingsTabsBuilder(self).build()
         self.settings_tabs = tabs.widget
+        self.settings_stack = tabs.stack
         llm_layout = tabs.llm_layout
         voice_layout = tabs.voice_layout
         shortcuts_layout = tabs.shortcuts_layout
-        content_layout.addWidget(self.settings_tabs, 1)
+        content_layout.addWidget(self.settings_tabs)
+        content_layout.addWidget(self.settings_stack, 1)
 
         # URL, état du serveur et modèle affichés sur trois lignes distinctes.
         api_line_layout = QHBoxLayout()
@@ -221,6 +244,7 @@ class SettingsDialog(QDialog):
         gpu_line_layout.addWidget(self.gpu_pstate_label)
         gpu_line_layout.addWidget(self.gpu_detail_label, 1)
         llm_layout.addLayout(gpu_line_layout)
+        llm_layout.addStretch(1)
 
         self.voice_box = QFrame()
         self.voice_box.setObjectName("SettingsCard")
@@ -518,7 +542,9 @@ class SettingsDialog(QDialog):
         self.server_status_label.setText("")
         self.server_status_detail.setText("")
         self.server_model_label.setText("INDISPONIBLE")
-        self.status_thread = ServerStatusThread(self.api_input.text(), self)
+        self.status_thread = ServerStatusThread(
+            self.api_input.text(), self, LLAMA_SERVER_MANAGER.auth_token
+        )
         self.status_thread.status_checked.connect(self.update_server_status)
         self.status_thread.finished.connect(self.on_status_thread_finished)
         self.status_thread.start()
@@ -613,7 +639,12 @@ class SettingsDialog(QDialog):
         if path: self.server_model_input.setText(path)
 
     def collect_server_config(self):
-        return {'auto_start': self.server_autostart_check.isChecked(), 'executable': self.server_exe_input.text().strip(), 'model': self.server_model_input.text().strip(), 'arguments': [line.strip() for line in self.server_args_input.toPlainText().splitlines() if line.strip()]}
+        return normalize_server_config(
+            self.server_autostart_check.isChecked(),
+            self.server_exe_input.text(),
+            self.server_model_input.text(),
+            self.server_args_input.toPlainText().splitlines(),
+        )
 
     def start_local_server(self):
         runtime = dict(self.config); runtime['llama_server'] = self.collect_server_config()
@@ -648,7 +679,7 @@ class SettingsDialog(QDialog):
                 self.voice_device_info.setText("")
             self.voice_device_combo.setCurrentIndex(match)
             self.voice_test_btn.setEnabled(self.voice_device_combo.count() > 0)
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001
             LOGGER.warning("Impossible d'énumérer les microphones: %s", error)
             self.voice_device_info.setText("Aucun microphone disponible.")
             self.voice_test_btn.setEnabled(False)
@@ -667,8 +698,8 @@ class SettingsDialog(QDialog):
         self.voice_test_btn.setText("Arrêter le test")
         self.mic_test_thread.start()
 
-    def _on_theme_preview_changed(self):
-        new_theme = self.theme_combo.currentData() or "dark"
+    def _on_theme_preview_changed(self, _index=None):
+        new_theme = "dark" if self.theme_combo.currentIndex() == 0 else "light"
         app = QApplication.instance()
         if app:
             apply_app_theme(app, new_theme)
@@ -708,11 +739,11 @@ class SettingsDialog(QDialog):
         self.config['voice_input']['input_device_name'] = selected.get("name", "") if isinstance(selected, dict) else ""
         self.config['text_to_speech'] = copy.deepcopy(self.temp_tts_config)
         self.config['text_to_speech']['automatic_reading'] = self.automatic_reading_check.isChecked()
-        self.config['api_url'] = self.api_input.text().strip() or DEFAULT_CONFIG['api_url']
+        self.config["api_url"] = normalize_api_url(self.api_input.text())
         self.config['llama_server'] = self.collect_server_config()
         self.config['actions'] = self.temp_actions
         if hasattr(self, 'theme_combo'):
-            chosen_theme = self.theme_combo.currentData() or "dark"
+            chosen_theme = "dark" if self.theme_combo.currentIndex() == 0 else "light"
             self.config['theme'] = chosen_theme
             app = QApplication.instance()
             if app:
@@ -725,12 +756,3 @@ class SettingsDialog(QDialog):
             }
         save_config(self.config)
         self.accept()
-
-# ==========================================
-# SAISIE VOCALE DIRECTE
-# ==========================================
-from src.audio.recorder import AudioRecorderThread
-
-
-from src.ui.widgets.audio_bars import LiveAudioIndicator, ScrollingAudioBars
-from src.ui.widgets.recording_indicator import RecordingIndicator

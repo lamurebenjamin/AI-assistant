@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Widgets UI réutilisables."""
 
 from src.ui.widgets.animated_buttons import AnimatedComposerButton, AnimatedHeaderButton

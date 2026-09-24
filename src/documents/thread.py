@@ -1,16 +1,14 @@
-# -*- coding: utf-8 -*-
 """Thread d'analyse documentaire et multimodale par llama.cpp."""
 
 import base64
 import json
-from typing import List, Optional
 
 import requests
 from PySide6.QtCore import QThread, Signal
 
 from src.documents.payload_builder import prepare_document_payload
-from src.llm.contracts import DocumentTurn, LlmMessage, LlmResponse
 from src.llm.client import LlamaThread
+from src.llm.contracts import DocumentTurn
 from src.llm.response_parser import clean_chunk
 
 
@@ -36,22 +34,24 @@ class DocumentAnalysisThread(QThread):
         paths: list,
         question: str,
         parent=None,
-        audio_data: Optional[bytes] = None,
-        history: Optional[List[DocumentTurn]] = None,
+        audio_data: bytes | None = None,
+        history: list[DocumentTurn] | None = None,
         skill_manager=None,
-        forced_tool: Optional[str] = None,
+        forced_tool: str | None = None,
+        auth_token: str | None = None,
     ):
         super().__init__(parent)
         self.api_url = api_url
+        self.auth_token = (auth_token or "").strip() or None
         self.model = model
         self.paths = list(paths)
         self.question = question.strip()
         self.audio_data = audio_data
-        self.history: List[DocumentTurn] = list(history or [])
+        self.history: list[DocumentTurn] = list(history or [])
         self.skill_manager = skill_manager
         self.forced_tool = forced_tool
         self._stop_requested = False
-        self._agent: Optional[LlamaThread] = None
+        self._agent: LlamaThread | None = None
         self._active_response = None
         self.source_pages: list = []
 
@@ -132,7 +132,7 @@ class DocumentAnalysisThread(QThread):
             self.api_url,
             json=payload,
             timeout=(15, 180),
-            headers={"Content-Type": "application/json"},
+            headers=self._request_headers(),
         )
         self._active_response = response
         response.raise_for_status()
@@ -147,6 +147,13 @@ class DocumentAnalysisThread(QThread):
                 for item in text
             )
         return self.clean_chunk(str(text)).strip()
+
+    def _request_headers(self) -> dict[str, str]:
+        """Construit les en-têtes HTTP de l'analyse documentaire."""
+        headers = {"Content-Type": "application/json"}
+        if self.auth_token:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+        return headers
 
     def _summarize_complete_context(self, context: str) -> str:
         """Traite toutes les pages par lots puis fusionne les résumés."""
@@ -302,6 +309,7 @@ class DocumentAnalysisThread(QThread):
                     skill_manager=self.skill_manager,
                     enable_tools=True,
                     forced_tool=self.forced_tool,
+                    auth_token=self.auth_token,
                 )
                 agent.new_text.connect(self.new_text.emit)
                 agent.thinking_text.connect(self.thinking_text.emit)
@@ -325,6 +333,8 @@ class DocumentAnalysisThread(QThread):
                 "Content-Type": "application/json",
                 "Cache-Control": "no-cache",
             }
+            if self.auth_token:
+                headers["Authorization"] = f"Bearer {self.auth_token}"
             received = False
             with requests.post(
                 self.api_url,
@@ -400,7 +410,7 @@ class DocumentAnalysisThread(QThread):
             if response is not None:
                 try:
                     detail = response.text[:1500] or detail
-                except Exception:
+                except Exception:  # noqa: BLE001,S110
                     pass
             detail_lower = detail.lower()
             incompatible = any(
@@ -437,5 +447,5 @@ class DocumentAnalysisThread(QThread):
             else:
                 message = f"Erreur réseau : {detail}"
             self.request_error.emit(message, incompatible)
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001
             self.request_error.emit(f"Erreur inattendue : {error}", False)

@@ -1,6 +1,7 @@
 """Bulles de dialogue (utilisateur / assistant) et navigateur de texte avec loupe intégrée."""
 
 import math
+
 from PySide6.QtCore import QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
@@ -14,7 +15,6 @@ from shiboken6 import isValid as is_qt_object_valid
 
 import src.ui.design_tokens as t
 from src.ui.widgets.skill_tag import SkillTag
-
 
 
 class SourceZoomTextBrowser(QTextBrowser):

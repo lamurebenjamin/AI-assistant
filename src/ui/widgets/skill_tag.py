@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy
 
 import src.ui.design_tokens as t
 from src.ui.icons import get_application_icon, get_default_tool_icon
+from src.ui.stylesheet import qss_skill_tag_frame, qss_skill_tag_title
 
 
 class SkillTag(QFrame):
@@ -44,15 +45,10 @@ class SkillTag(QFrame):
         color = self._text_color or t.COLOR_TEXT_PRIMARY
         size = int(t.SIZE_SM.rstrip("px")) + self._font_size_offset
         self.title_label.setStyleSheet(
-            f"color:{color}; font-family:{t.FONT_TEXT}; font-size:{size}px; "
-            "font-weight:600; background:transparent;"
+            qss_skill_tag_title(color=color, font_size=size, weight=600)
         )
         if self._framed:
-            self.setStyleSheet(
-                f"QFrame#SkillTag {{ background:{t.COLOR_PRIMARY_LIGHT}; "
-                f"border:1px solid {t.COLOR_PRIMARY_BORDER}; "
-                f"border-radius:{t.RADIUS_MD}; }}"
-            )
+            self.setStyleSheet(qss_skill_tag_frame())
 
     def set_tag(self, tag: dict | None) -> None:
         if not tag:

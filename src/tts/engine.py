@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
 """Moteur Kokoro partagé et persistant avec initialisation CUDA optimisée."""
 
 import logging
 import threading
-from typing import Optional
 
 LOGGER = logging.getLogger("Assistant.TTS")
 
@@ -19,8 +17,8 @@ class KokoroEngine:
 
     _lock = threading.Lock()
     _instance = None
-    _model_path: Optional[str] = None
-    _voices_path: Optional[str] = None
+    _model_path: str | None = None
+    _voices_path: str | None = None
 
     @classmethod
     def get(cls, model_path: str, voices_path: str):
@@ -31,8 +29,8 @@ class KokoroEngine:
                 or cls._voices_path != voices_path
             ):
                 try:
-                    from onnxruntime import InferenceSession
                     from kokoro_onnx import Kokoro
+                    from onnxruntime import InferenceSession
                 except ImportError as exc:
                     raise RuntimeError(
                         f"Kokoro ou ONNX Runtime n'est pas disponible: {exc}"

@@ -6,12 +6,23 @@ import json
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QSizePolicy, QTextBrowser, QVBoxLayout, QWidget
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QTextBrowser,
+    QVBoxLayout,
+    QWidget,
 )
 
 import src.ui.design_tokens as t
 from src.ui.icons import get_application_icon, get_default_tool_icon
-from src.ui.stylesheet import qss_tool_call_step, qss_tool_code_browser, qss_transparent_surface
+from src.ui.stylesheet import (
+    qss_timeline_connector,
+    qss_tool_call_step,
+    qss_tool_code_browser,
+    qss_transparent_surface,
+)
 from src.ui.widgets.timeline_header import ChevronLabel
 
 CHEVRON_SPACING = 4
@@ -56,7 +67,7 @@ class ToolCallStepWidget(QFrame):
         timeline_line.setFrameShape(QFrame.VLine)
         timeline_line.setFrameShadow(QFrame.Plain)
         timeline_line.setFixedWidth(t.TIMELINE_LINE_WIDTH)
-        timeline_line.setStyleSheet(f"color:{t.COLOR_BORDER}; background:{t.COLOR_BORDER};")
+        timeline_line.setStyleSheet(qss_timeline_connector())
         header_layout.addWidget(timeline_line, 0, Qt.AlignVCenter)
 
         icon_label = QLabel(self.header_row)
@@ -148,11 +159,11 @@ class ToolCallStepWidget(QFrame):
                     if isinstance(data, dict):
                         # Clés prioritaires pour le résumé
                         for key in ("filename", "name", "path", "filepath", "file", "title", "query", "command"):
-                            if key in data and data[key]:
+                            if data.get(key):
                                 val = str(data[key])
                                 param_summary = f"— {val}" if key not in ("command", "query") else val
                                 break
-                except Exception:
+                except Exception:  # noqa: BLE001,S110
                     pass
             elif not trimmed.startswith(("{", "[")):
                 param_summary = trimmed
@@ -192,7 +203,7 @@ class ToolCallStepWidget(QFrame):
         return verb, target
 
     def _section_title_style(self, color=None) -> str:
-        is_dark = t.is_dark_theme()
+        t.is_dark_theme()
         c = color or t.COLOR_TOOL_MUTED
         return f"""
             font-size: {t.SIZE_SM};
@@ -225,7 +236,7 @@ class ToolCallStepWidget(QFrame):
             try:
                 parsed = json.loads(trimmed)
                 return json.dumps(parsed, ensure_ascii=False, indent=2)
-            except Exception:
+            except Exception:  # noqa: BLE001,S110
                 pass
         return trimmed
 
@@ -256,7 +267,7 @@ class ToolCallStepWidget(QFrame):
         if hover:
             verb_color = target_color = t.COLOR_TEXT_PRIMARY
         else:
-            is_dark = t.is_dark_theme()
+            t.is_dark_theme()
             muted_color = t.COLOR_TEXT_SECONDARY
             target_color = t.COLOR_TOOL_TEXT
             if status == "error":

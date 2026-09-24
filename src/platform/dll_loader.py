@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Gestionnaire de chargement des bibliothèques dynamiques natives et NVIDIA sous Windows."""
 
 import os
@@ -13,7 +12,6 @@ def setup_nvidia_dll_directories() -> list:
     Retourne la liste des handles afin de maintenir les répertoires actifs
     pendant toute la durée de vie du processus.
     """
-    global _DLL_HANDLES
     if _DLL_HANDLES:
         return _DLL_HANDLES
 

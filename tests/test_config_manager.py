@@ -9,8 +9,7 @@ from src.config.schema import DEFAULT_CONFIG
 
 class ConfigManagerTests(unittest.TestCase):
     def write(self, value):
-        handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False)
-        with handle:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as handle:
             json.dump(value, handle)
         self.addCleanup(Path(handle.name).unlink, missing_ok=True)
         return handle.name

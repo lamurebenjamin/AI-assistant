@@ -1,16 +1,14 @@
-# -*- coding: utf-8 -*-
 """Gestionnaire de chargement et de sauvegarde de la configuration JSON."""
 
 import copy
 import json
 import os
 import re
-from typing import Optional
 
-from src.config.schema import AssistantConfig, CONFIG_FILE, DEFAULT_CONFIG, LOGGER
+from src.config.schema import CONFIG_FILE, DEFAULT_CONFIG, LOGGER, AssistantConfig
 
 
-def load_config(path: Optional[str] = None) -> AssistantConfig:
+def load_config(path: str | None = None) -> AssistantConfig:
     """Charge une configuration normalisée ou retourne les valeurs par défaut.
 
     Les fichiers absents, invalides ou partiellement obsolètes sont tolérés :
@@ -25,7 +23,7 @@ def load_config(path: Optional[str] = None) -> AssistantConfig:
         with open(target_path, "r", encoding="utf-8") as config_file:
             loaded = json.load(config_file)
         if not isinstance(loaded, dict):
-            raise ValueError("La racine de la configuration doit être un objet JSON")
+            raise TypeError("La racine de la configuration doit être un objet JSON")
 
         config["hotkeys_enabled"] = bool(loaded.get("hotkeys_enabled", True))
         try:
@@ -184,13 +182,23 @@ def load_config(path: Optional[str] = None) -> AssistantConfig:
         except (TypeError, ValueError):
             ctrl9["font_size"] = DEFAULT_CONFIG["ctrl9"]["font_size"]
 
+        loaded_skills = loaded.get("skills")
+        if isinstance(loaded_skills, dict):
+            config["skills"] = copy.deepcopy(DEFAULT_CONFIG.get("skills", {}))
+            for skill_name, skill_val in loaded_skills.items():
+                if isinstance(skill_val, dict):
+                    config["skills"].setdefault(skill_name, {})
+                    config["skills"][skill_name].update(skill_val)
+        else:
+            config["skills"] = copy.deepcopy(DEFAULT_CONFIG.get("skills", {}))
+
         return config
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError) as error:
         LOGGER.warning("Configuration ignorée (%s): %s", target_path, error)
         return copy.deepcopy(DEFAULT_CONFIG)
 
 
-def save_config(config: AssistantConfig, path: Optional[str] = None) -> None:
+def save_config(config: AssistantConfig, path: str | None = None) -> None:
     """Enregistre une configuration de façon atomique.
 
     Lève ``OSError`` pour les erreurs de fichier et ``TypeError``/``ValueError``

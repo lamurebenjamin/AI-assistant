@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Détection et inspection des processus Windows au premier plan."""
 
 import ctypes

@@ -132,8 +132,40 @@ La checklist de validation native Windows est disponible dans
 [UI_WINDOWS_RELEASE_CHECKLIST.md](UI_WINDOWS_RELEASE_CHECKLIST.md).
 L'audit de maintenabilité et de facilité de mise à jour est disponible dans
 [MAINTAINABILITY_AUDIT.md](MAINTAINABILITY_AUDIT.md).
+La synthèse à jour de ces audits est disponible dans
+[AUDIT_GLOBAL.md](AUDIT_GLOBAL.md). Ce rapport global est le document de
+référence pour le verdict, les résultats de validation et la roadmap restante ;
+les trois rapports spécialisés conservent le détail de chaque domaine.
+
+---
+
+## 🧩 Skills & Serveur MCP (Model Context Protocol)
+
+Les skills de l'assistant reposent sur **FastMCP** ([Model Context Protocol](https://modelcontextprotocol.io/)). Ils sont découverts automatiquement et utilisables à la fois en local (via `llama.cpp` et l'interface Ctrl+9) et par des clients externes (Claude Desktop, Cursor, Antigravity, etc.).
+
+- **Guide complet de création de skills pour IA et développeurs** : [skills/README.md](skills/README.md).
+- **Skills disponibles** : `pdf`, `docx`, `excel`, `pptx`, `ftnc`.
+- **Serveur MCP standard pour applications tierces** :
+  ```powershell
+  # Lancement du serveur MCP en mode stdio
+  .\.venv\Scripts\python.exe scripts/run_mcp_server.py
+  ```
 
 ## 🚀 Installation & Démarrage
+
+### Authentification locale de llama-server
+
+Lorsque l'application démarre `llama-server`, elle génère un jeton
+cryptographiquement aléatoire en mémoire et le transmet via `--api-key`.
+Les requêtes d'inférence et de supervision utilisent automatiquement ce jeton
+dans l'en-tête `Authorization: Bearer ...`. Le jeton n'est pas écrit dans
+`config.json` ni dans `llama-server.log` et il est renouvelé à chaque
+redémarrage du serveur.
+
+Un serveur `llama-server` lancé manuellement en dehors de l'application n'est
+pas compatible avec ce mode d'authentification automatique. Il doit être
+arrêté puis relancé par l'application, ou configuré séparément avec son propre
+jeton.
 
 ### 1. Prérequis
 - Windows 10/11 64-bit
@@ -165,6 +197,11 @@ Le point d'entrée unique de l'application est :
 .\.venv\Scripts\python.exe main.pyw
 ```
 Le raccourci Windows `Assistant IA.lnk` utilise cette même commande.
+
+À la fermeture via le menu **Quitter** ou l’icône de notification, l’application
+demande l’arrêt des threads LLM, documentaires, audio, TTS et monitoring puis
+attend leur terminaison avant de quitter Qt. Cette séquence évite la destruction
+d’un `QThread` encore actif.
 
 ---
 
@@ -198,3 +235,24 @@ graph TD
     Assistant --> Monitor[src/monitoring/runtime_info.py]
     Monitor --> Nvidia[src/monitoring/nvidia_status.py]
 ```
+
+---
+
+## 🤖 Gouvernance & Développement par LLM
+
+Le projet applique une règle stricte pour toute contribution ou intervention par un modèle d'IA (LLM / Agent de programmation) :
+- **Règles obligatoires** : consulter le document de référence [`AGENTS.md`](AGENTS.md) ou `.agents/rules/llm_development_rules.md`.
+- **Exigences** :
+  1. À chaque action, la **documentation**, les **tests unitaires**, et les **sources uniques de vérité** (*Design Tokens*, icônes SVG dans `src/ui/icons.py`) doivent être mis à jour.
+  2. Aucun bug ne peut être résolu sans test de non-régression associé.
+  3. Tous les tests doivent passer au vert avant livraison (`python -m unittest discover tests`).
+
+---
+
+## 🔌 Serveur MCP Standard (Model Context Protocol)
+
+L'ensemble des compétences de l'assistant (création Word, Excel, PDF, PowerPoint, FTNC) est exposé via le protocole standard MCP :
+```powershell
+.\.venv\Scripts\python.exe scripts/run_mcp_server.py
+```
+Voir [`skills/README.md`](skills/README.md) pour les détails d'intégration avec Claude Desktop ou Cursor.

@@ -1,19 +1,20 @@
-# -*- coding: utf-8 -*-
 """Thread de requête d'inférence LLM avec streaming SSE et support agentique."""
 
 import base64
 import json
-import logging
-import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import requests
 from PySide6.QtCore import QThread, Signal
 
 from core.skill_manager import SkillError
 from src.config.schema import HTTP_TIMEOUT, LOGGER
-from src.llm.contracts import LlmMessage, LlmResponse
-from src.llm.agent import extract_user_request_text, messages_have_audio, requires_tool_call
+from src.llm.agent import (
+    extract_user_request_text,
+    messages_have_audio,
+    requires_tool_call,
+)
+from src.llm.contracts import LlmMessage
 from src.llm.response_parser import clean_chunk
 
 
@@ -47,17 +48,19 @@ class LlamaThread(QThread):
         system_prompt: str,
         prefix: str,
         model: str,
-        audio_data: Optional[bytes] = None,
-        audio_format: Optional[str] = None,
+        audio_data: bytes | None = None,
+        audio_format: str | None = None,
         audio_language: str = "fr",
         vocabulary_prompt: str = "",
         skill_manager=None,
         enable_tools: bool = True,
-        forced_tool: Optional[str] = None,
+        forced_tool: str | None = None,
         max_tokens: int = 8192,
+        auth_token: str | None = None,
     ):
         super().__init__()
         self.api_url = api_url
+        self.auth_token = (auth_token or "").strip() or None
         self.forced_tool = (forced_tool or "").strip() or None
         self.prompt = prompt
         self.system_prompt = system_prompt
@@ -74,7 +77,7 @@ class LlamaThread(QThread):
         if self.enable_tools:
             try:
                 self.tool_definitions = skill_manager.describe_for_llm()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 LOGGER.exception("Impossible de préparer les tools pour llama.cpp")
                 self.tool_definitions = []
         self._stop_requested = False
@@ -87,7 +90,7 @@ class LlamaThread(QThread):
 
     clean_chunk = staticmethod(clean_chunk)
 
-    def _make_messages(self, user_content: Any) -> List[LlmMessage]:
+    def _make_messages(self, user_content: Any) -> list[LlmMessage]:
         return [
             {"role": "system", "content": f"{self.system_prompt.rstrip()}\n\n"},
             {"role": "user", "content": user_content},
@@ -95,7 +98,7 @@ class LlamaThread(QThread):
 
     def _base_payload(
         self, messages: list, stream: bool = True, include_tools: bool = False, tool_choice: str = "auto"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         payload = {
             "model": self.model,
             "messages": messages,
@@ -170,7 +173,7 @@ class LlamaThread(QThread):
                 result_payload = {"success": True, "result": result}
                 result_display = json.dumps(result, ensure_ascii=False, indent=2, default=str)
                 self.tool_event.emit("résultat", name, result_display)
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001
                 LOGGER.exception("Erreur d'exécution du tool '%s'", name)
                 error_detail = f"{type(error).__name__}: {error}"
                 self.tool_event.emit("erreur", name, error_detail)
@@ -191,6 +194,13 @@ class LlamaThread(QThread):
             })
         return results
 
+    def _request_headers(self) -> dict[str, str]:
+        """Construit les en-têtes HTTP communs, avec authentification locale."""
+        headers = {"Content-Type": "application/json"}
+        if self.auth_token:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+        return headers
+
     def _stream_request(self, messages: list, include_tools: bool = False, tool_choice: str = "auto") -> tuple:
         payload = self._base_payload(
             messages,
@@ -205,6 +215,8 @@ class LlamaThread(QThread):
             "Content-Type": "application/json",
             "Cache-Control": "no-cache",
         }
+        if self.auth_token:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
 
         with requests.post(
             self.api_url,
@@ -377,7 +389,7 @@ class LlamaThread(QThread):
             if self.audio_data is not None:
                 try:
                     encoded_audio = base64.b64encode(self.audio_data).decode("ascii")
-                except Exception as error:
+                except Exception as error:  # noqa: BLE001
                     self.request_error.emit(f"Erreur d'encodage Base64 : {error}", False)
                     return
 
@@ -443,7 +455,7 @@ class LlamaThread(QThread):
             if response is not None:
                 try:
                     detail = response.text[:1600] or detail
-                except Exception:
+                except Exception:  # noqa: BLE001,S110
                     pass
             lowered = detail.lower()
             incompatible = self.audio_data is not None and any(
@@ -465,7 +477,7 @@ class LlamaThread(QThread):
             self.request_error.emit(message, incompatible)
         except (ValueError, TypeError, KeyError, SkillError, json.JSONDecodeError) as error:
             self.request_error.emit(f"Erreur agent/skill : {error}", False)
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001
             LOGGER.exception("Erreur inattendue dans LlamaThread")
             self.request_error.emit(
                 f"Erreur inattendue : {type(error).__name__}: {error}", False

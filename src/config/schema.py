@@ -1,11 +1,8 @@
-# -*- coding: utf-8 -*-
 """Constantes et schéma par défaut de la configuration de l'assistant."""
 
-import copy
 import logging
 import os
-from pathlib import Path
-from typing import List, Optional, TypedDict, Union
+from typing import TypedDict
 
 
 class ActionConfig(TypedDict):
@@ -18,7 +15,7 @@ class LlamaServerConfig(TypedDict):
     auto_start: bool
     executable: str
     model: str
-    arguments: List[Union[str, int, float]]
+    arguments: list[str | int | float]
 
 
 class TextToSpeechConfig(TypedDict):
@@ -31,14 +28,14 @@ class TextToSpeechConfig(TypedDict):
     voices_path: str
     voice: str
     language: str
-    output_device: Optional[int]
+    output_device: int | None
     output_device_name: str
 
 
 class VoiceInputConfig(TypedDict):
     enabled: bool
     hotkey: str
-    input_device: Optional[int]
+    input_device: int | None
     input_device_name: str
     sample_rate: int
     minimum_duration: float
@@ -57,7 +54,18 @@ class Ctrl9Config(TypedDict):
     font_size: int
 
 
-class AssistantConfig(TypedDict):
+class FtncConfig(TypedDict, total=False):
+    fichier_ftnc: str
+    feuille_ftnc: str
+    fichier_suivi_euro: str
+    feuille_suivi_euro: str
+
+
+class SkillsConfig(TypedDict, total=False):
+    ftnc: FtncConfig
+
+
+class AssistantConfig(TypedDict, total=False):
     theme: str
     hotkeys_enabled: bool
     api_url: str
@@ -65,8 +73,9 @@ class AssistantConfig(TypedDict):
     llama_server: LlamaServerConfig
     text_to_speech: TextToSpeechConfig
     voice_input: VoiceInputConfig
-    actions: List[ActionConfig]
+    actions: list[ActionConfig]
     ctrl9: Ctrl9Config
+    skills: SkillsConfig
 
 APP_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CONFIG_FILE = os.path.join(APP_DIR, "config.json")
@@ -80,6 +89,14 @@ DEFAULT_CONFIG = {
     "hotkeys_enabled": True,
     "api_url": "http://127.0.0.1:8080/v1/chat/completions",
     "llm_max_tokens": 8192,
+    "skills": {
+        "ftnc": {
+            "fichier_ftnc": "",
+            "feuille_ftnc": "Données consolidées",
+            "fichier_suivi_euro": "",
+            "feuille_suivi_euro": "SUIVI",
+        }
+    },
     "llama_server": {
         "auto_start": True,
         "executable": "llama-server.exe",

@@ -9,12 +9,30 @@ from src.rendering.markdown import markdown_to_html
 from src.ui import design_tokens as tokens
 from src.ui.stylesheet import build_settings_qss, qss_menu, qss_tooltip
 
-
 HEX_RE = re.compile(r"#[0-9A-Fa-f]{3,8}\b")
 FIXED_DIMENSION_LITERAL_RE = re.compile(r"setFixed(?:Width|Height)\(\s*\d+\s*\)")
 UI_ROOT = Path(__file__).resolve().parents[1] / "src" / "ui"
 TOKEN_FILE = UI_ROOT / "design_tokens.py"
 STYLE_EXCEPTIONS = Path(__file__).resolve().parents[1] / "UI_STYLE_EXCEPTIONS.md"
+
+
+def _contrast_ratio(foreground, background):
+    def parse(value):
+        value = value.lstrip("#")
+        return tuple(int(value[index:index + 2], 16) / 255 for index in (0, 2, 4))
+
+    def luminance(color):
+        channels = [
+            channel / 12.92
+            if channel <= 0.04045
+            else ((channel + 0.055) / 1.055) ** 2.4
+            for channel in color
+        ]
+        return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+    first = luminance(parse(foreground))
+    second = luminance(parse(background))
+    return (max(first, second) + 0.05) / (min(first, second) + 0.05)
 
 
 def _source_lines_without_comments(path):
@@ -126,6 +144,38 @@ class DesignTokenTests(unittest.TestCase):
     def test_gray_scale_tokens_were_removed(self):
         self.assertFalse(any(key.startswith("COLOR_GRAY_") for key in tokens.THEME_DARK))
 
+    def test_primary_button_text_meets_aa_contrast_in_both_themes(self):
+        for theme_name, theme in (
+            ("dark", tokens.THEME_DARK),
+            ("light", tokens.THEME_LIGHT),
+        ):
+            for state in ("COLOR_PRIMARY", "COLOR_PRIMARY_HOVER", "COLOR_PRIMARY_ACTIVE"):
+                ratio = _contrast_ratio(theme["COLOR_PRIMARY_TEXT"], theme[state])
+                self.assertGreaterEqual(
+                    ratio,
+                    4.5,
+                    f"Contraste insuffisant ({ratio:.2f}:1) pour {state} en thème {theme_name}",
+                )
+
+    def test_semantic_text_and_focus_colors_meet_contrast_targets(self):
+        for theme_name, theme in (
+            ("dark", tokens.THEME_DARK),
+            ("light", tokens.THEME_LIGHT),
+        ):
+            for text_key in ("COLOR_TEXT_PRIMARY", "COLOR_TEXT_SECONDARY", "COLOR_TEXT_LINK"):
+                ratio = _contrast_ratio(theme[text_key], theme["COLOR_BG_PAGE"])
+                self.assertGreaterEqual(
+                    ratio,
+                    4.5,
+                    f"Contraste insuffisant ({ratio:.2f}:1) pour {text_key} en thème {theme_name}",
+                )
+            focus_ratio = _contrast_ratio(theme["COLOR_PRIMARY"], theme["COLOR_BG_SURFACE"])
+            self.assertGreaterEqual(
+                focus_ratio,
+                3.0,
+                f"Anneau/focus insuffisant ({focus_ratio:.2f}:1) en thème {theme_name}",
+            )
+
 
 class SharedWidgetTests(unittest.TestCase):
     @classmethod
@@ -169,6 +219,7 @@ class InteractiveStateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from PySide6.QtWidgets import QApplication
+
         from src.ui.icons import initialize_icons
 
         cls.app = QApplication.instance() or QApplication([])
@@ -205,7 +256,11 @@ class InteractiveStateTests(unittest.TestCase):
         from PySide6.QtCore import QPointF, Qt
         from PySide6.QtGui import QEnterEvent, QIcon
         from PySide6.QtWidgets import QWidget
-        from src.ui.widgets.animated_buttons import AnimatedComposerButton, AnimatedHeaderButton
+
+        from src.ui.widgets.animated_buttons import (
+            AnimatedComposerButton,
+            AnimatedHeaderButton,
+        )
 
         host = QWidget()
         host.resize(120, 80)
@@ -254,6 +309,7 @@ class InteractiveStateTests(unittest.TestCase):
     def test_composer_tooltips_dimensions_and_loading_control(self):
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QWidget
+
         from src.ui.widgets.composer_bar import ComposerBar
 
         host = QWidget()
@@ -320,6 +376,7 @@ class InteractiveStateTests(unittest.TestCase):
 
     def test_skill_tag_and_loading_widgets(self):
         from PySide6.QtCore import QSize
+
         from src.ui.widgets.skill_tag import SkillTag
         from src.ui.widgets.thinking_dots import GenerationSpinner, ThinkingDots
 
@@ -360,27 +417,7 @@ class MarkdownBrowserTests(unittest.TestCase):
     def test_qtextbrowser_renders_lists_code_and_links(self):
         from src.ui.widgets.chat_bubble import ChatBubble
 
-        source = "\n".join(
-            [
-                "## Titre",
-                "",
-                "Un paragraphe assez long pour vérifier le retour à la ligne Qt.",
-                "",
-                "- puce une",
-                "- puce deux",
-                "",
-                "1. premier",
-                "2. deuxième",
-                "",
-                "`inline`",
-                "",
-                "[source](file:///tmp/source.pdf)",
-                "",
-                "```",
-                "print('ok')",
-                "```",
-            ]
-        )
+        source = "## Titre\n\nUn paragraphe assez long pour vérifier le retour à la ligne Qt.\n\n- puce une\n- puce deux\n\n1. premier\n2. deuxième\n\n`inline`\n\n[source](file:///tmp/source.pdf)\n\n```\nprint('ok')\n```"
         html = markdown_to_html(source)
         self.assertIn("<ul", html)
         self.assertIn("<ol", html)
@@ -420,6 +457,7 @@ class PersistentWindowThemeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from PySide6.QtWidgets import QApplication
+
         from src.ui.icons import initialize_icons
 
         cls.app = QApplication.instance() or QApplication([])
@@ -443,6 +481,7 @@ class PersistentWindowThemeTests(unittest.TestCase):
 
     def test_settings_dialog_refresh_theme(self):
         from copy import deepcopy
+
         from src.config.schema import DEFAULT_CONFIG
         from src.ui.windows.settings_dialog import SettingsDialog
 

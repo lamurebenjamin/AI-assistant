@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Utilitaires d'extraction et de manipulation de documents PDF."""
 
 import base64
@@ -7,7 +6,6 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
 
 try:
     import pymupdf as fitz
@@ -18,7 +16,7 @@ except ImportError:
         fitz = None
 
 
-def normalize_page_selection(selection, page_count: int) -> List[int]:
+def normalize_page_selection(selection, page_count: int) -> list[int]:
     """Normalise une saisie `1-3, 7` ou une liste `[1, 2, 3, 7]`."""
     if page_count <= 0:
         return []
@@ -62,7 +60,7 @@ def normalize_page_selection(selection, page_count: int) -> List[int]:
 
 def extract_pdf_context(
     path: str, selected_pages=None, max_rendered_pages: int = 4
-) -> Tuple[List[dict], List[dict], int]:
+) -> tuple[list[dict], list[dict], int]:
     """Extrait le texte des pages sélectionnées et rend les pages sans texte en image."""
     if fitz is None:
         raise RuntimeError(

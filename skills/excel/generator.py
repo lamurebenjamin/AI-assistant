@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -11,8 +11,8 @@ from openpyxl.utils import get_column_letter
 def create_excel(
     filename: str,
     sheet_name: str,
-    headers: List[str],
-    rows: List[List[Any]],
+    headers: list[str],
+    rows: list[list[Any]],
 ) -> str:
     """Crée un classeur Excel XLSX dans output/ et retourne son chemin absolu."""
     project_root = Path(__file__).resolve().parents[2]
@@ -46,7 +46,7 @@ def create_excel(
     expected_columns = len(clean_headers)
     for index, row in enumerate(clean_rows, start=1):
         if not isinstance(row, (list, tuple)):
-            raise ValueError(f"La ligne {index} doit être une liste de valeurs.")
+            raise TypeError(f"La ligne {index} doit être une liste de valeurs.")
         if len(row) != expected_columns:
             raise ValueError(
                 f"La ligne {index} contient {len(row)} valeur(s), "

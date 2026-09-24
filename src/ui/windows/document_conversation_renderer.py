@@ -1,25 +1,27 @@
 """Conversation rendering and source capture composition for DocumentDialog."""
 
-import base64
 import html
-import json
 import os
-import re
 import tempfile
-import time
 from pathlib import Path
 
 from PySide6.QtCore import QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+    QHBoxLayout,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
-import src.ui.design_tokens as t
-from src.ui.stylesheet import qss_transparent_surface
+from src.ui.stylesheet import qss_shimmer_status_label, qss_transparent_surface
 from src.ui.widgets.chat_bubble import ChatBubble
 from src.ui.widgets.thinking_dots import ShimmerLabel
-from src.ui.widgets.tool_call_widget import ThinkingGroupWidget, ToolExecutionGroupWidget
+from src.ui.widgets.tool_call_widget import (
+    ThinkingGroupWidget,
+    ToolExecutionGroupWidget,
+)
 from src.ui.windows.document_source_renderer import DocumentSourceRenderer
 
 
@@ -280,45 +282,45 @@ class DocumentConversationRenderer:
 
                 def add_thinking_widget():
                     nonlocal thinking
-                    if not thinking:
+                    if not thinking:  # noqa: B023
                         return
-                    thinking_widget = ThinkingGroupWidget(assistant_row, font_size_offset=dialog.FONT_SIZE_OFFSET)
+                    thinking_widget = ThinkingGroupWidget(assistant_row, font_size_offset=dialog.FONT_SIZE_OFFSET)  # noqa: B023
                     thinking_widget.setFixedWidth(bubble_width)
-                    thinking_widget.append_text(thinking)
-                    if answer:
-                        duration = turn.get("thinking_duration")
+                    thinking_widget.append_text(thinking)  # noqa: B023
+                    if answer:  # noqa: B023
+                        duration = turn.get("thinking_duration")  # noqa: B023
                         if duration is not None:
                             thinking_widget.finish(duration)
                         else:
                             thinking_widget.collapse()
-                    elif turn_index == dialog.current_turn_index and turn.get("loading", False):
+                    elif turn_index == dialog.current_turn_index and turn.get("loading", False):  # noqa: B023
                         thinking_widget.title.start_animation()
                     thinking_widget.toggled.connect(
                         dialog._on_tool_widget_toggled
                     )
-                    if turn_index == dialog.current_turn_index:
+                    if turn_index == dialog.current_turn_index:  # noqa: B023
                         dialog.current_thinking_widget = thinking_widget
-                    assistant_layout.addWidget(thinking_widget, 0, Qt.AlignLeft)
+                    assistant_layout.addWidget(thinking_widget, 0, Qt.AlignLeft)  # noqa: B023
 
                 def add_answer_widget():
-                    if not answer:
+                    if not answer:  # noqa: B023
                         return
                     rendered = (
-                        dialog.host.markdown_to_html(answer, dialog.FONT_SIZE_OFFSET)
+                        dialog.host.markdown_to_html(answer, dialog.FONT_SIZE_OFFSET)  # noqa: B023
                         if dialog.host is not None
-                        else html.escape(answer).replace("\n", "<br>")
+                        else html.escape(answer).replace("\n", "<br>")  # noqa: B023
                     )
                     assistant_bubble = ChatBubble(
-                        "assistant", assistant_row, dialog.FONT_SIZE_OFFSET
+                        "assistant", assistant_row, dialog.FONT_SIZE_OFFSET  # noqa: B023
                     )
                     assistant_bubble.setFixedWidth(bubble_width)
                     assistant_bubble.link_clicked.connect(dialog._open_source_link)
                     assistant_bubble.set_html(
-                        rendered + turn.get("sources_html", "")
+                        rendered + turn.get("sources_html", "")  # noqa: B023
                     )
-                    if turn_index == dialog.current_turn_index:
+                    if turn_index == dialog.current_turn_index:  # noqa: B023
                         dialog.current_assistant_bubble = assistant_bubble
-                    assistant_layout.addWidget(assistant_bubble, 0, Qt.AlignLeft)
+                    assistant_layout.addWidget(assistant_bubble, 0, Qt.AlignLeft)  # noqa: B023
 
                 if not thinking_after_tools:
                     add_thinking_widget()
@@ -352,8 +354,7 @@ class DocumentConversationRenderer:
                     status_label.start_animation()
                     status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
                     status_label.setStyleSheet(
-                        f"font-family:{t.FONT_TEXT}; font-size:{int(t.SIZE_SM.rstrip('px')) + dialog.FONT_SIZE_OFFSET}px; "
-                        "background:transparent;"
+                        qss_shimmer_status_label(dialog.FONT_SIZE_OFFSET)
                     )
                     dots_layout.addWidget(status_label, 0, Qt.AlignLeft | Qt.AlignTop)
                     dots_layout.addStretch(1)
@@ -483,7 +484,7 @@ class DocumentConversationRenderer:
             dialog._update_response_scroll_policy()
         else:
             dialog.response.setFixedHeight(0)
-        if hasattr(self, "turn_navigation"):
+        if hasattr(dialog, "turn_navigation"):
             QTimer.singleShot(0, dialog._update_turn_navigation_visibility)
 
         # The response and composer are stacked vertically. Computing the height
@@ -498,7 +499,7 @@ class DocumentConversationRenderer:
         # Quand l'utilisateur tape '/' au début de la conversation (ou quand la fenêtre
         # est encore petite), on agrandit la hauteur pour afficher entièrement le menu
         # des commandes skills sans être coupé, tant que l'on ne dépasse pas MAX_HEIGHT.
-        if hasattr(self, 'slash_popup') and dialog.slash_popup.isVisible():
+        if hasattr(dialog, 'slash_popup') and dialog.slash_popup.isVisible():
             popup_h = dialog.slash_popup.content_height() if hasattr(dialog.slash_popup, 'content_height') else dialog.slash_popup.height()
             min_needed_for_slash = header_h + separator_h + top_bottom_margins + composer_h + popup_h + 12
             target = max(target, min_needed_for_slash)
@@ -518,7 +519,7 @@ class DocumentConversationRenderer:
             dialog.expanded_height = target
 
         # Repositionner le popup slash flottant au-dessus du compositeur
-        if hasattr(self, 'slash_popup') and dialog.slash_popup.isVisible():
+        if hasattr(dialog, 'slash_popup') and dialog.slash_popup.isVisible():
             dialog._position_slash_popup()
 
     def _add_sources_html(self, answer, documents):

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
 
 from docx import Document
 from docx.shared import Pt
 
 
-def Nouveau_Document(filename: str, title: str, paragraphs: List[str]) -> str:
+def Nouveau_Document(filename: str, title: str, paragraphs: list[str]) -> str:
     """Crée un DOCX dans output/ et retourne son chemin absolu."""
     project_root = Path(__file__).resolve().parents[2]
     output_dir = project_root / "output"

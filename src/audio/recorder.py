@@ -1,16 +1,14 @@
-# -*- coding: utf-8 -*-
 """Thread d'enregistrement et de prétraitement audio du microphone."""
 
 import io
 import time
 import wave
 from math import gcd
-from typing import Optional
 
 import numpy as np
+import sounddevice as sd
 from PySide6.QtCore import QThread, Signal
 from scipy.signal import resample_poly
-import sounddevice as sd
 
 from src.config.schema import LOGGER
 
@@ -47,7 +45,7 @@ class AudioRecorderThread(QThread):
         self.release_tail_ms = max(0, int(release_tail_ms))
         self.microphone_gain = min(8.0, max(1.0, float(microphone_gain)))
         self._running = True
-        self._stop_at: Optional[float] = None
+        self._stop_at: float | None = None
 
     def stop_recording(self):
         """Conserve une courte fin d'enregistrement après le relâchement."""
@@ -69,8 +67,8 @@ class AudioRecorderThread(QThread):
                     dtype="int16",
                     samplerate=native_rate,
                 )
-            except Exception:
-                native_rate = int(round(float(info["default_samplerate"])))
+            except Exception:  # noqa: BLE001
+                native_rate = round(float(info["default_samplerate"]))
                 sd.check_input_settings(
                     device=self.device,
                     channels=1,
@@ -164,12 +162,12 @@ class AudioRecorderThread(QThread):
                 wav.writeframes(samples.tobytes())
 
             self.recorded.emit(buffer.getvalue(), duration, rms)
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001
             LOGGER.exception("Erreur de capture audio")
             self.error.emit(f"Microphone indisponible : {error}")
         finally:
             if stream is not None:
                 try:
                     stream.close()
-                except Exception:
+                except Exception:  # noqa: BLE001,S110
                     pass

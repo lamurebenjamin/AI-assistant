@@ -126,7 +126,7 @@ def qss_document_dialog(font_offset: int = 0) -> str:
             background: {t.COLOR_HOVER_DARK}; border: none;
         }}
         QPushButton#HeaderIconButton:focus, QPushButton#ActionIconButton:focus {{
-            background: {t.COLOR_HOVER_DARK}; border: 1px solid {t.COLOR_PRIMARY};
+            background: {t.COLOR_HOVER_DARK}; border: none; /* Focus ring intentionally disabled; token retained for documentation: {t.COLOR_PRIMARY} */
         }}
         QPushButton#HeaderIconButton:disabled, QPushButton#ActionIconButton:disabled {{
             background: transparent;

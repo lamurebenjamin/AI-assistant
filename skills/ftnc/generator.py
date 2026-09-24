@@ -1,20 +1,17 @@
 from __future__ import annotations
 
-from collections import Counter
-from datetime import date, datetime
-from pathlib import Path
+import os
 import re
 import warnings
+from collections import Counter
+from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 from openpyxl import load_workbook
 
-FICHIER_FTNC = Path(r"C:\Users\my0630415\Downloads\FTNC.xlsx")
-FEUILLE_FTNC = "Données consolidées"
-FICHIER_SUIVI_EURO = Path(r"C:\Users\my0630415\documents\OneDriveSafran-NoC3CloudUSSensitive\OneDrive - SAFRAN GROUP\Shortcuts\SLS Wheels & Brakes Product Improvement Engineering - KPI FTNC WB\Suivi des FTNC €uro.xlsx")
-FEUILLE_SUIVI_EURO = "SUIVI"
-
+# Constantes métier
 STATUTS_FTNC = {"Non démarrées", "En cours"}
 PROGRAMMES_FTNC = {
     "Alpha-Jet", "ATL2", "Falcon 2000", "Falcon 2000EX", "Falcon 900",
@@ -27,6 +24,44 @@ PROGRAMMES_SUIVI = {
 }
 PRIORITES = ["Urgent", "Important", "Moyen", "Minimum"]
 FLAGS = {"Urgent": "🚩", "Important": "🟠", "Moyen": "🔵", "Minimum": "⚪", "Inconnue": "❔"}
+
+
+def _get_ftnc_config() -> dict[str, Any]:
+    """Charge la configuration du skill FTNC depuis config.json ou les variables d'environnement."""
+    ftnc_cfg = {}
+    try:
+        from src.config.manager import load_config
+        config = load_config()
+        ftnc_cfg = config.get("skills", {}).get("ftnc", {})
+    except (OSError, ValueError, ImportError):
+        ftnc_cfg = {}
+
+    env_ftnc = os.environ.get("FTNC_FICHIER_PLANNER")
+    env_feuille_ftnc = os.environ.get("FTNC_FEUILLE_PLANNER")
+    env_suivi = os.environ.get("FTNC_FICHIER_SUIVI_EURO")
+    env_feuille_suivi = os.environ.get("FTNC_FEUILLE_SUIVI_EURO")
+
+    fichier_ftnc = env_ftnc or ftnc_cfg.get("fichier_ftnc") or ""
+    feuille_ftnc = env_feuille_ftnc or ftnc_cfg.get("feuille_ftnc") or "Données consolidées"
+    fichier_suivi = env_suivi or ftnc_cfg.get("fichier_suivi_euro") or ""
+    feuille_suivi = env_feuille_suivi or ftnc_cfg.get("feuille_suivi_euro") or "SUIVI"
+
+    project_root = Path(__file__).resolve().parents[2]
+
+    def _resolve(p_str: str) -> Path | None:
+        if not p_str or not str(p_str).strip():
+            return None
+        p = Path(os.path.expandvars(os.path.expanduser(str(p_str).strip())))
+        if not p.is_absolute():
+            p = project_root / p
+        return p
+
+    return {
+        "fichier_ftnc": _resolve(fichier_ftnc),
+        "feuille_ftnc": str(feuille_ftnc).strip(),
+        "fichier_suivi_euro": _resolve(fichier_suivi),
+        "feuille_suivi_euro": str(feuille_suivi).strip(),
+    }
 
 
 def _texte(v: Any) -> str:
@@ -45,7 +80,7 @@ def _date(v: Any) -> str:
     texte = str(v).strip()
     for fmt in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%d-%m-%Y", "%d.%m.%Y"):
         try:
-            return datetime.strptime(texte, fmt).strftime("%d/%m/%y")
+            return datetime.strptime(texte, fmt).replace(tzinfo=timezone.utc).strftime("%d/%m/%y")
         except ValueError:
             pass
     return texte
@@ -60,16 +95,29 @@ def _normaliser_reference(v: Any) -> str:
     return "".join(c for c in _texte(v).casefold() if c.isalnum())
 
 
-def _verifier(path: Path) -> None:
+def _verifier(path: Path | None, role: str = "FTNC") -> Path:
+    """Valide l'existence d'un fichier source Excel avec messages clairs."""
+    if path is None or not str(path).strip():
+        raise FileNotFoundError(
+            f"Le fichier Excel {role} n'est pas configuré.\n"
+            f"Veuillez définir 'skills.ftnc' dans config.json "
+            f"ou la variable d'environnement FTNC_FICHIER_PLANNER / FTNC_FICHIER_SUIVI_EURO."
+        )
     if not path.exists():
-        raise FileNotFoundError(f"Le fichier Excel est introuvable :\n{path}")
+        raise FileNotFoundError(
+            f"Le fichier Excel {role} est introuvable :\n{path}\n"
+            f"Vérifiez le chemin renseigné dans config.json ('skills.ftnc')."
+        )
+    return path
 
 
 def _lire_planner() -> pd.DataFrame:
-    _verifier(FICHIER_FTNC)
-    df = pd.read_excel(FICHIER_FTNC, sheet_name=FEUILLE_FTNC, usecols="B,C,E,F", engine="openpyxl", dtype=str)
+    cfg = _get_ftnc_config()
+    path = _verifier(cfg["fichier_ftnc"], "du planner FTNC (fichier_ftnc)")
+    feuille = cfg["feuille_ftnc"]
+    df = pd.read_excel(path, sheet_name=feuille, usecols="B,C,E,F", engine="openpyxl", dtype=str)
     if len(df.columns) != 4:
-        raise ValueError("Impossible d'identifier les colonnes B, C, E et F de FTNC.xlsx.")
+        raise ValueError(f"Impossible d'identifier les colonnes B, C, E et F de {path.name}.")
     df.columns = ["reference", "programme", "statut", "priorite"]
     for col in df.columns:
         df[col] = df[col].astype("string").str.strip()
@@ -82,14 +130,16 @@ def _lire_planner() -> pd.DataFrame:
 
 
 def _lire_suivi() -> list[dict[str, Any]]:
-    _verifier(FICHIER_SUIVI_EURO)
+    cfg = _get_ftnc_config()
+    path = _verifier(cfg["fichier_suivi_euro"], "du suivi €uro (fichier_suivi_euro)")
+    feuille = cfg["feuille_suivi_euro"]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
-        wb = load_workbook(FICHIER_SUIVI_EURO, read_only=True, data_only=True)
+        wb = load_workbook(path, read_only=True, data_only=True)
     try:
-        if FEUILLE_SUIVI_EURO not in wb.sheetnames:
-            raise ValueError(f'La feuille "{FEUILLE_SUIVI_EURO}" est introuvable dans {FICHIER_SUIVI_EURO.name}.')
-        ws = wb[FEUILLE_SUIVI_EURO]
+        if feuille not in wb.sheetnames:
+            raise ValueError(f'La feuille "{feuille}" est introuvable dans {path.name}.')
+        ws = wb[feuille]
         autorises = {p.casefold() for p in PROGRAMMES_SUIVI}
         resultats = []
         for numero_ligne, ligne in enumerate(ws.iter_rows(min_row=2, max_col=18, values_only=True), start=2):

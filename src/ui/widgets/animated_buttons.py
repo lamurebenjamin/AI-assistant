@@ -1,22 +1,51 @@
+"""Boutons animés partagés par les fenêtres de l'application.
+
+Source unique d'icônes
+----------------------
+Toutes les icônes proviennent du registre ``src.ui.icons.ICONS_DARK`` (défini
+dans ``_SVG`` de icons.py). Pour ajouter ou modifier une icône :
+  1. Ajouter/modifier le chemin SVG dans ``_SVG`` (icons.py).
+  2. Ajuster ``_DARK_STROKE`` si l'épaisseur doit différer du défaut.
+  3. Relancer ``tests/test_icon_consistency.py`` pour valider.
+
+AnimatedComposerButton (Ctrl+9 / barre de composition)
+  - Icônes rendues au format ICON_SIZE_COMPOSER (14 px).
+  - Animations par kind : rotation du + (add), saut vertical (mic).
+
+AnimatedHeaderButton (Ctrl+7 / fenêtre principale)
+  - Icône fournie à la construction depuis ICONS_DARK.
+  - Animation audio oscillante pour le bouton de lecture (is_audio=True).
+"""
+
 import math
 import random
+
 import numpy as np
 from PySide6.QtCore import (
+    Property,
     QEasingCurve,
-    QEvent,
     QPointF,
     QPropertyAnimation,
     QRectF,
     QSize,
     Qt,
     QTimer,
-    Property,
 )
-from PySide6.QtGui import QBrush, QColor, QIcon, QLinearGradient, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QPushButton, QToolTip
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QIcon,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+)
+from PySide6.QtWidgets import QPushButton
+from qfluentwidgets import ToolTipFilter as _ToolTipFilter
 
 import src.ui.design_tokens as t
 
+# ─── Helpers partagés ────────────────────────────────────────────────────────
 
 def _hover_overlay(pressed: bool) -> QColor:
     alpha = 36 if pressed else 20
@@ -25,30 +54,32 @@ def _hover_overlay(pressed: bool) -> QColor:
     return QColor(0, 0, 0, alpha)
 
 
-def _draw_focus_ring(painter: QPainter, center: QPointF, diameter: float) -> None:
-    """Anneau de focus visible dans les deux thèmes, indépendant du survol."""
-    pen = QPen(QColor(t.COLOR_PRIMARY))
-    pen.setWidthF(1.6)
-    painter.setPen(pen)
-    painter.setBrush(Qt.NoBrush)
-    painter.drawEllipse(
-        QRectF(
-            center.x() - diameter / 2.0,
-            center.y() - diameter / 2.0,
-            diameter,
-            diameter,
-        )
-    )
+def _install_tooltip_filter(widget: QPushButton, text: str) -> None:
+    """Assigne le tooltip et installe ToolTipFilter une seule fois."""
+    widget.setToolTip.__func__(widget, text)  # appel base Qt sans récursion
+    if text:
+        for f in widget.children():
+            if isinstance(f, _ToolTipFilter):
+                return
+        widget.installEventFilter(_ToolTipFilter(widget, showDelay=300))
 
+
+# ─── AnimatedComposerButton ───────────────────────────────────────────────────
 
 class AnimatedComposerButton(QPushButton):
-    """Bouton carré avec cercle de survol et icône centrés exactement."""
+    """Bouton carré : cercle de survol Fluent + icône centrée depuis ICONS_DARK.
 
-    # Même couleur et même épaisseur de trait que l'icône de fermeture "x".
-    ICON_STROKE_WIDTH = t.ICON_STROKE_WIDTH
-    BUTTON_SIZE = QSize(t.BUTTON_SIZE_HEADER, t.BUTTON_SIZE_HEADER)
+    Toutes les icônes proviennent du registre central ``src.ui.icons.ICONS_DARK``
+    (défini dans ``_SVG`` de icons.py). Pour changer une icône, modifier ``_SVG``.
+    Les animations spécifiques par kind (rotation du +, saut du micro) sont
+    appliquées via des transforms QPainter avant le rendu de l'icône.
+    """
+
+    BUTTON_SIZE    = QSize(t.BUTTON_SIZE_HEADER, t.BUTTON_SIZE_HEADER)
     HOVER_DIAMETER = float(t.BUTTON_HOVER_DIAMETER)
-    ICON_EXTENT = 6.5
+    # Taille rendue de l'icône — doit correspondre à ICON_SIZE_CLOSE du header
+    # pour que le bouton Fermer soit identique dans Ctrl+7 et Ctrl+9.
+    ICON_SIZE      = t.ICON_SIZE_COMPOSER
 
     @property
     def icon_color(self) -> QColor:
@@ -67,9 +98,12 @@ class AnimatedComposerButton(QPushButton):
         self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.StrongFocus)
-        self.setToolTip("")
+        # Initialisation sans déclencher setToolTip override (tooltip vide = pas de filtre)
+        QPushButton.setToolTip(self, "")
         self.setIcon(QIcon())
         self.setStyleSheet("background:transparent;border:none;padding:0;margin:0;")
+
+    # ── Property d'animation ──────────────────────────────────────────────────
 
     def get_animation_progress(self) -> float:
         return self._progress
@@ -84,11 +118,13 @@ class AnimatedComposerButton(QPushButton):
 
     def _animate_to(self, target: float) -> None:
         if self.kind == "close":
-            return
+            return  # pas d'animation pour le bouton fermer
         self._animation.stop()
         self._animation.setStartValue(self._progress)
         self._animation.setEndValue(float(target))
         self._animation.start()
+
+    # ── Événements ───────────────────────────────────────────────────────────
 
     def enterEvent(self, event) -> None:
         self._animate_to(1.0)
@@ -100,102 +136,95 @@ class AnimatedComposerButton(QPushButton):
         self.update()
         super().leaveEvent(event)
 
-    def event(self, event) -> bool:
-        if event.type() == QEvent.ToolTip:
-            tip = self.toolTip()
-            if tip:
-                QToolTip.showText(event.globalPos(), tip, None)
-                return True
-        return super().event(event)
+    def setToolTip(self, text: str) -> None:  # type: ignore[override]
+        """Source unique pour les tooltips : installe ToolTipFilter automatiquement."""
+        super().setToolTip(text)
+        if text:
+            for f in self.children():
+                if isinstance(f, _ToolTipFilter):
+                    return
+            self.installEventFilter(_ToolTipFilter(self, showDelay=300))
+
+    # ── Rendu ─────────────────────────────────────────────────────────────────
 
     def paintEvent(self, event) -> None:
+        from src.ui.icons import (
+            ICONS_DARK,  # import tardif → évite les imports circulaires
+        )
+
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
         center = QPointF(self.width() / 2.0, self.height() / 2.0)
 
-        if self.isEnabled() and (self.underMouse() or self.isDown() or self.hasFocus()):
+        # Cercle de survol
+        if self.isEnabled() and (self.underMouse() or self.isDown()):
             d = self.HOVER_DIAMETER
             circle = QRectF(center.x() - d / 2.0, center.y() - d / 2.0, d, d)
             painter.setPen(Qt.NoPen)
             painter.setBrush(_hover_overlay(self.isDown()))
             painter.drawEllipse(circle)
-        if self.hasFocus() and self.isEnabled():
-            _draw_focus_ring(painter, center, self.HOVER_DIAMETER)
 
-        color = self.icon_color
-        pen = QPen(color)
-        pen.setWidthF(self.ICON_STROKE_WIDTH)
-        pen.setCapStyle(Qt.RoundCap)
-        pen.setJoinStyle(Qt.RoundJoin)
-        painter.setPen(pen)
-        painter.setBrush(Qt.NoBrush)
+        # Icône depuis ICONS_DARK (source unique — même registre que AnimatedHeaderButton)
+        icon = ICONS_DARK.get(self.kind, QIcon())
+        if icon.isNull():
+            painter.end()
+            return
 
+        sz = self.ICON_SIZE
+        icon_rect = QRectF(
+            center.x() - sz / 2.0,
+            center.y() - sz / 2.0,
+            float(sz), float(sz),
+        ).toRect()
+
+        # Transforms d'animation par kind
         if self.kind == "add":
+            # Rotation 0→-90° au survol pour indiquer l'ouverture du menu
             painter.save()
             painter.translate(center)
             painter.rotate(-90.0 * self._progress)
-            a = self.ICON_EXTENT
-            painter.drawLine(QPointF(-a, 0.0), QPointF(a, 0.0))
-            painter.drawLine(QPointF(0.0, -a), QPointF(0.0, a))
-            painter.restore()
-
-        elif self.kind == "stop":
-            painter.save()
-            painter.translate(center)
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(color)
-            painter.drawRoundedRect(QRectF(-5, -5, 10, 10), 2, 2)
-            painter.restore()
-
-        elif self.kind == "send":
-            painter.save()
-            painter.translate(center)
-            a = self.ICON_EXTENT
-            path = QPainterPath()
-            path.moveTo(-a, -a * 0.72)
-            path.lineTo(a, 0.0)
-            path.lineTo(-a, a * 0.72)
-            path.lineTo(-a * 0.34, 0.0)
-            path.closeSubpath()
-            painter.drawPath(path)
-            painter.drawLine(QPointF(-a * 0.34, 0.0), QPointF(a, 0.0))
+            painter.translate(-center.x(), -center.y())
+            icon.paint(painter, icon_rect, Qt.AlignCenter)
             painter.restore()
 
         elif self.kind == "mic":
-            painter.save()
+            # Saut vertical au survol + overlay de remplissage de la capsule
             jump = -2.5 * abs(np.sin(self._progress * np.pi))
-            painter.translate(center.x(), center.y() + jump)
-            capsule = QPainterPath()
-            capsule.addRoundedRect(QRectF(-2.4, -6.5, 4.8, 8.0), 2.4, 2.4)
-            painter.drawPath(capsule)
-            painter.drawArc(QRectF(-5.0, -2.5, 10.0, 7.0), 180 * 16, 180 * 16)
-            painter.drawLine(QPointF(0.0, 4.5), QPointF(0.0, 6.5))
-            painter.drawLine(QPointF(-3.2, 6.5), QPointF(3.2, 6.5))
+            painter.save()
+            painter.translate(QPointF(0.0, jump))
+            icon.paint(painter, icon_rect, Qt.AlignCenter)
             if self._progress > 0.001:
-                painter.save()
-                painter.setClipPath(capsule)
-                h = 8.0 * self._progress
+                color = self.icon_color
+                fill = QColor(color)
+                fill.setAlphaF(0.45 * self._progress)
                 painter.setPen(Qt.NoPen)
-                painter.setBrush(color)
-                painter.drawRect(QRectF(-2.4, 1.5 - h, 4.8, h))
-                painter.restore()
+                painter.setBrush(fill)
+                cap = QPainterPath()
+                cx = float(icon_rect.center().x())
+                cy = float(icon_rect.center().y()) - sz * 0.10
+                cw, ch = sz * 0.25, sz * 0.42 * self._progress
+                cap.addRoundedRect(
+                    QRectF(cx - cw / 2.0, cy - ch / 2.0, cw, ch),
+                    cw / 2.0, cw / 2.0,
+                )
+                painter.setClipPath(cap)
+                painter.drawPath(cap)
+                painter.setClipping(False)
             painter.restore()
 
-        else:  # close
-            painter.save()
-            painter.translate(center)
-            a = self.ICON_EXTENT
-            painter.drawLine(QPointF(-a, -a), QPointF(a, a))
-            painter.drawLine(QPointF(a, -a), QPointF(-a, a))
-            painter.restore()
+        else:
+            # close, send, stop : rendu direct sans transform
+            icon.paint(painter, icon_rect, Qt.AlignCenter)
 
         painter.end()
 
 
+# ─── AnimatedHeaderButton ─────────────────────────────────────────────────────
+
 class AnimatedHeaderButton(QPushButton):
     """Bouton d'en-tête circulaire moderne avec animation fluide de survol et remplissage audio."""
 
-    BUTTON_SIZE = QSize(t.BUTTON_SIZE_HEADER, t.BUTTON_SIZE_HEADER)
+    BUTTON_SIZE    = QSize(t.BUTTON_SIZE_HEADER, t.BUTTON_SIZE_HEADER)
     HOVER_DIAMETER = float(t.BUTTON_HOVER_DIAMETER)
 
     def __init__(
@@ -225,18 +254,18 @@ class AnimatedHeaderButton(QPushButton):
         self.setFixedSize(self.BUTTON_SIZE)
         self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
-        # Navigable au clavier : le focus dessine un anneau primaire dans paintEvent.
         self.setFocusPolicy(Qt.StrongFocus)
         self._icon = icon if icon is not None else QIcon()
         if tooltip:
             self.setToolTip(tooltip)
         self.setStyleSheet("background: transparent; border: none; padding: 0; margin: 0;")
 
+    # ── Animation audio ───────────────────────────────────────────────────────
+
     def _step_audio_animation(self) -> None:
         """Anime le niveau de remplissage de gauche à droite de manière fluide et aléatoire."""
         if self._is_hovered:
             self._phase += 0.14
-            # Somme d'harmoniques et léger jitter pour un mouvement vivant de signal audio
             base = 0.60 + 0.26 * math.sin(self._phase * 1.7) + 0.12 * math.sin(self._phase * 3.4 + 0.6)
             jitter = (random.random() - 0.5) * 0.08
             self._audio_target = max(0.25, min(0.95, base + jitter))
@@ -248,12 +277,16 @@ class AnimatedHeaderButton(QPushButton):
                 self._audio_timer.stop()
         self.update()
 
+    # ── Icon ──────────────────────────────────────────────────────────────────
+
     def setIcon(self, icon: QIcon) -> None:
         self._icon = icon
         self.update()
 
     def icon(self) -> QIcon:
         return self._icon
+
+    # ── Property d'animation ──────────────────────────────────────────────────
 
     def get_animation_progress(self) -> float:
         return self._progress
@@ -266,15 +299,16 @@ class AnimatedHeaderButton(QPushButton):
         float, fget=get_animation_progress, fset=set_animation_progress
     )
 
+    # ── Événements ────────────────────────────────────────────────────────────
+
     def enterEvent(self, event) -> None:
         self._is_hovered = True
         self._animation.stop()
         self._animation.setStartValue(self._progress)
         self._animation.setEndValue(1.0)
         self._animation.start()
-        if self.is_audio:
-            if not self._audio_timer.isActive():
-                self._audio_timer.start()
+        if self.is_audio and not self._audio_timer.isActive():
+            self._audio_timer.start()
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
@@ -287,13 +321,16 @@ class AnimatedHeaderButton(QPushButton):
             self._audio_target = 0.0
         super().leaveEvent(event)
 
-    def event(self, event) -> bool:
-        if event.type() == QEvent.ToolTip:
-            tip = self.toolTip()
-            if tip:
-                QToolTip.showText(event.globalPos(), tip, None)
-                return True
-        return super().event(event)
+    def setToolTip(self, text: str) -> None:  # type: ignore[override]
+        """Source unique pour les tooltips : installe ToolTipFilter automatiquement."""
+        super().setToolTip(text)
+        if text:
+            for f in self.children():
+                if isinstance(f, _ToolTipFilter):
+                    return
+            self.installEventFilter(_ToolTipFilter(self, showDelay=300))
+
+    # ── Rendu ─────────────────────────────────────────────────────────────────
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -304,12 +341,10 @@ class AnimatedHeaderButton(QPushButton):
 
         # Fond et remplissage animé
         if self.is_audio and (self._audio_fill > 0.001 or self._progress > 0.001 or self.isDown()):
-            # Fond circulaire léger de base
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(0, 0, 0, 16 if not self.isDown() else 35))
             painter.drawEllipse(circle)
 
-            # Remplissage de gauche à droite oscillant
             if self._audio_fill > 0.001:
                 painter.save()
                 clip_path = QPainterPath()
@@ -325,25 +360,21 @@ class AnimatedHeaderButton(QPushButton):
                 painter.setPen(Qt.NoPen)
                 painter.drawRect(fill_rect)
 
-                # Fin trait d'onde au front de remplissage
                 painter.setPen(QPen(QColor(0, 0, 0, 60), 1.2, Qt.SolidLine, Qt.RoundCap))
                 painter.drawLine(
                     QPointF(circle.x() + fill_w, circle.top() + 3),
                     QPointF(circle.x() + fill_w, circle.bottom() - 3),
                 )
                 painter.restore()
-        elif self.isEnabled() and (self._progress > 0.001 or self.isDown() or self.hasFocus()):
+        elif self.isEnabled() and (self._progress > 0.001 or self.isDown()):
             overlay = _hover_overlay(self.isDown())
-            if not self.isDown() and not self.hasFocus():
+            if not self.isDown():
                 overlay.setAlpha(max(1, int(overlay.alpha() * self._progress)))
             painter.setPen(Qt.NoPen)
             painter.setBrush(overlay)
             painter.drawEllipse(circle)
 
-        if self.hasFocus() and self.isEnabled():
-            _draw_focus_ring(painter, center, d)
-
-        # Dessin de l'icône centrée
+        # Icône centrée
         if not self._icon.isNull():
             icon_sz = self.iconSize()
             if icon_sz.isEmpty():
@@ -356,7 +387,7 @@ class AnimatedHeaderButton(QPushButton):
             )
             self._icon.paint(painter, rect.toRect(), Qt.AlignCenter)
 
-            # Remplissage synchronisé de l'icône son de gauche à droite
+            # Remplissage synchronisé de l'icône audio de gauche à droite
             if self.is_audio and self._audio_fill > 0.001:
                 if self._icon_filled is None:
                     from src.ui.icons import ICONS_DARK

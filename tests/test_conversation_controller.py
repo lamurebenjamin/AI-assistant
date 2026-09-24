@@ -43,7 +43,7 @@ def test_controller_delegates_rendering_and_source_capture_updates():
 def test_controller_preserves_source_link_navigation():
     dialog = _Dialog()
     controller = ConversationController(dialog)
-    token = base64.urlsafe_b64encode("document.pdf".encode()).decode().rstrip("=")
+    token = base64.urlsafe_b64encode(b"document.pdf").decode().rstrip("=")
 
     controller.open_source_link(QUrl(f"source:3:{token}"))
 

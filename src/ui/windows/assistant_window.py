@@ -1,21 +1,16 @@
 """Fenêtre flottante principale de l'assistant IA avec fond acrylique et gestion du dialogue."""
 
 import html
-import json
 import os
 import re
 import sys
 import time
-from pathlib import Path
 
 import keyboard
 import pyperclip
 from PySide6.QtCore import (
     QEasingCurve,
-    QPoint,
     QPropertyAnimation,
-    QRect,
-    QRectF,
     QSize,
     Qt,
     QTimer,
@@ -24,29 +19,24 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QColor,
-    QCursor,
     QDesktopServices,
-    QAction,
-    QIcon,
-    QPainterPath,
     QPalette,
-    QRegion,
 )
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
-    QHBoxLayout,
     QLabel,
-    QMenu,
-    QPushButton,
-    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
+from qfluentwidgets import (
+    SmoothScrollArea,
+)
 
+import src.ui.design_tokens as t
 from core.skill_manager import SkillManager
-from src.config.manager import load_config, save_config
-from src.config.schema import APP_DIR, LOGGER
+from src.config.manager import load_config
+from src.config.schema import LOGGER
 from src.documents.pdf_utils import open_pdf_at_page as _open_pdf_at_page
 from src.documents.thread import DocumentAnalysisThread
 from src.llm.client import LlamaThread
@@ -55,6 +45,7 @@ from src.llm.server_manager import get_server_manager
 from src.monitoring.runtime_info import RuntimeInfoThread
 from src.rendering.markdown import format_inline_markdown, markdown_to_html
 from src.tts.thread import KokoroWarmupThread
+from src.ui.controllers.assistant_orchestration import AssistantOrchestrationController
 from src.ui.design_tokens import (
     ICON_SIZE_BUTTON,
     ICON_SIZE_CLOSE,
@@ -62,18 +53,26 @@ from src.ui.design_tokens import (
     SIZE_LG,
     SIZE_SM,
 )
-from src.ui.controllers.assistant_orchestration import AssistantOrchestrationController
-from src.ui.windows.assistant_response_renderer import AssistantResponseRenderer
-import src.ui.design_tokens as t
+from src.ui.fluent_compat import install_tooltip
 from src.ui.icons import ICONS_DARK
-from src.ui.stylesheet import build_acrylic_window_qss, qss_assistant_body, qss_menu
+from src.ui.stylesheet import (
+    build_acrylic_window_qss,
+    qss_assistant_body,
+    qss_scrollbar_hidden_horizontal,
+)
 from src.ui.theme import apply_acrylic_blur, apply_rounded_corners
 from src.ui.widgets.animated_buttons import AnimatedHeaderButton
 from src.ui.widgets.hairline import HairlineSeparator
 from src.ui.widgets.recording_indicator import RecordingIndicator
 from src.ui.widgets.tool_call_widget import ThinkingGroupWidget
 from src.ui.widgets.window_chrome import WindowChrome
-from src.ui.windows.document_dialog import DocumentDialog
+from src.ui.windows.assistant_file_links import created_file_paths, file_link_markdown
+from src.ui.windows.assistant_response_renderer import AssistantResponseRenderer
+from src.ui.windows.assistant_window_document_controller import (
+    AssistantWindowDocumentController,
+    AssistantWindowMenuController,
+)
+from src.ui.windows.assistant_window_geometry import AssistantWindowGeometryController
 from src.ui.windows.runtime_info_dialog import RuntimeInfoDialog
 from src.ui.windows.settings_dialog import SettingsDialog
 
@@ -102,7 +101,7 @@ class AssistantWindow(QWidget):
             ", ".join(self.loaded_skills) if self.loaded_skills else "aucun"
         )
         if self.config.get('llama_server', {}).get('auto_start', True):
-            ok, message = LLAMA_SERVER_MANAGER.start(self.config)
+            _ok, message = LLAMA_SERVER_MANAGER.start(self.config)
             print(f"llama.cpp : {message}")
 
         # Précharge Kokoro en arrière-plan pour que la première lecture
@@ -147,6 +146,9 @@ class AssistantWindow(QWidget):
         self.recording_indicator.cancel_requested.connect(self.cancel_voice_operation)
         self.orchestration = AssistantOrchestrationController(self)
         self.response_renderer = AssistantResponseRenderer(self)
+        self.menu_controller = AssistantWindowMenuController(self)
+        self.document_controller = AssistantWindowDocumentController(self)
+        self.geometry_controller = AssistantWindowGeometryController(self)
 
         # Animation d'attente avec des points successifs : ., .., ...
         self.loading_action_name = ""
@@ -193,7 +195,10 @@ class AssistantWindow(QWidget):
             process_ids.add(LLAMA_SERVER_MANAGER.process.pid)
 
         self.runtime_info_thread = RuntimeInfoThread(
-            self.config.get("api_url", ""), process_ids, self
+            self.config.get("api_url", ""),
+            process_ids,
+            self,
+            LLAMA_SERVER_MANAGER.auth_token,
         )
         self.runtime_info_thread.info_ready.connect(self._display_runtime_information)
         self.runtime_info_thread.finished.connect(self._on_runtime_info_finished)
@@ -240,9 +245,7 @@ class AssistantWindow(QWidget):
         self.panel.setStyleSheet(
             build_acrylic_window_qss(font_offset=1)
             + qss_assistant_body()
-            + """
-            QScrollBar:horizontal { height: 0; }
-            """
+            + qss_scrollbar_hidden_horizontal()
         )
 
         panel_layout = QVBoxLayout(self.panel)
@@ -272,14 +275,16 @@ class AssistantWindow(QWidget):
         self.close_button.clicked.connect(self.close_response_window)
         header.add_action(self.close_button)
         panel_layout.addWidget(header)
-        self.separator_wrapper = HairlineSeparator(self.panel)
-        panel_layout.addWidget(self.separator_wrapper)
+        self.separator_container = HairlineSeparator(self.panel)
+        self.separator_wrapper = self.separator_container
+        self.separator = self.separator_container.line
+        panel_layout.addWidget(self.separator_container)
 
         self.thinking_widget = ThinkingGroupWidget(self.panel)
         self.thinking_widget.hide()
         panel_layout.addWidget(self.thinking_widget)
 
-        self.scroll_area = QScrollArea(self.panel)
+        self.scroll_area = SmoothScrollArea(self.panel)
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -324,9 +329,7 @@ class AssistantWindow(QWidget):
         self.panel.setStyleSheet(
             build_acrylic_window_qss(font_offset=1)
             + qss_assistant_body()
-            + """
-            QScrollBar:horizontal { height: 0; }
-            """
+            + qss_scrollbar_hidden_horizontal()
         )
         pal = self.label.palette()
         pal.setColor(QPalette.Highlight, QColor(t.COLOR_PRIMARY_LIGHT))
@@ -390,80 +393,22 @@ class AssistantWindow(QWidget):
         super().mouseReleaseEvent(event)
 
     def update_rounded_mask(self):
-        radius = 16.0
-        path = QPainterPath(); path.addRoundedRect(QRectF(self.rect()), radius, radius)
-        self.setMask(QRegion(path.toFillPolygon().toPolygon()))
-        panel_path = QPainterPath(); panel_path.addRoundedRect(QRectF(self.panel.rect()), radius, radius)
-        self.panel.setMask(QRegion(panel_path.toFillPolygon().toPolygon()))
+        return self.geometry_controller.update_rounded_mask()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.update_rounded_mask()
+        self.geometry_controller.resize_event(event)
 
     def stop_height_animation(self):
         """Arrête proprement l'animation avant tout redimensionnement manuel."""
-        if self.collapse_animation is not None:
-            self.collapse_animation.stop()
-            self.collapse_animation.deleteLater()
-            self.collapse_animation = None
+        self.geometry_controller.stop_height_animation()
 
     def calculate_expanded_height(self):
         """Calcule la hauteur utile à partir du contenu réellement affiché."""
-        self.label.adjustSize()
-        thinking_height = (
-            self.thinking_widget.sizeHint().height()
-            if self.thinking_widget.isVisible()
-            else 0
-        )
-        content_height = self.label.sizeHint().height() + thinking_height + 52
-        maximum_height = max(150, int(self.width() * 9 / 16))
-        return max(70, min(maximum_height, content_height))
+        return self.geometry_controller.calculate_expanded_height()
 
     def animate_height(self, target, expanding):
-        self.stop_height_animation()
-        current = self.geometry()
-        fixed_top = current.top()
-
-        # L'état cible est enregistré immédiatement pour éviter qu'une animation
-        # interrompue laisse is_collapsed incohérent avec la géométrie réelle.
-        self.is_collapsed = not expanding
-        if expanding:
-            self.separator_container.show()
-            self.scroll_area.show()
-            target = max(70, target)
-        else:
-            # La hauteur développée ne doit jamais provenir d'une image
-            # intermédiaire de l'animation de réduction.
-            self.expanded_height = self.calculate_expanded_height()
-            target = 38
-
-        animation = QPropertyAnimation(self, b"geometry", self)
-        self.collapse_animation = animation
-        animation.setDuration(300)
-        animation.setStartValue(current)
-        animation.setEndValue(
-            QRect(current.left(), fixed_top, current.width(), target)
-        )
-        animation.setEasingCurve(QEasingCurve.InOutCubic)
-
-        def done():
-            # Ignore le callback d'une ancienne animation déjà remplacée.
-            if self.collapse_animation is not animation:
-                return
-            self.collapse_animation = None
-            if expanding:
-                self.resize(self.width(), target)
-                self.separator_container.show()
-                self.scroll_area.show()
-            else:
-                self.separator_container.hide()
-                self.scroll_area.hide()
-            self.move(self.x(), fixed_top)
-            self.update_rounded_mask()
-            animation.deleteLater()
-
-        animation.finished.connect(done)
-        animation.start()
+        self.geometry_controller.animate_height(target, expanding)
 
     def enterEvent(self, event):
         # Le survol ne modifie plus l'état de la fenêtre.
@@ -477,7 +422,7 @@ class AssistantWindow(QWidget):
         """Copie de façon fiable le texte sélectionné, y compris dans les lecteurs PDF."""
         try:
             clipboard_backup = pyperclip.paste()
-        except Exception:
+        except Exception:  # noqa: BLE001
             clipboard_backup = ""
 
         marker = f"__ASSISTANT_COPY_{time.monotonic_ns()}__"
@@ -488,7 +433,8 @@ class AssistantWindow(QWidget):
                 time.sleep(0.04)
                 try:
                     value = pyperclip.paste()
-                except Exception:
+                except Exception:  # noqa: BLE001
+                    LOGGER.debug("Lecture du presse-papiers indisponible", exc_info=True)
                     continue
                 if value != marker:
                     return str(value).rstrip("\r\n")
@@ -506,7 +452,7 @@ class AssistantWindow(QWidget):
             for key in ('ctrl', 'shift', 'alt'):
                 try:
                     keyboard.release(key)
-                except Exception:
+                except Exception:  # noqa: BLE001,S110
                     pass
             time.sleep(0.12)
 
@@ -524,74 +470,15 @@ class AssistantWindow(QWidget):
         finally:
             try:
                 pyperclip.copy(clipboard_backup)
-            except Exception:
+            except Exception:  # noqa: BLE001,S110
                 pass
 
     def _show_menu_impl(self):
-        self.selected_text = self.get_selected_text()
-        self.update_window_title()
-
-        menu = QMenu(self)
-        menu.setObjectName("AssistantMenu")
-        menu.setAttribute(Qt.WA_TranslucentBackground, False)
-        menu.setAutoFillBackground(True)
-        menu.setStyleSheet(
-            qss_menu(
-                "AssistantMenu",
-                font_size=WINDOW_SIZE_LG,
-                selected_as_primary=True,
-                padding=8,
-            )
-        )
-
-        for i, action in enumerate(self.config['actions']):
-            display_name = action['name']
-            if i < 9:
-                display_name = f"{i+1}  •  {display_name}"
-            act = QAction(display_name, self)
-            act.triggered.connect(lambda checked, a=action: self.execute_action(a))
-            menu.addAction(act)
-
-        menu.addSeparator()
-        document_action = QAction("9  •  Interroger mes documents", self)
-        document_action.triggered.connect(self.show_document_dialog)
-        menu.addAction(document_action)
-
-        menu.addSeparator()
-
-        action_param = QAction("Paramètres", self)
-        action_param.triggered.connect(self.open_settings)
-        menu.addAction(action_param)
-
-        action_quit = QAction("Quitter", self)
-        action_quit.triggered.connect(self.quit_application)
-        menu.addAction(action_quit)
-
-        menu.winId()
-        apply_rounded_corners(int(menu.winId()))
-
-        cursor_pos = QCursor.pos()
-        menu.exec(cursor_pos)
+        self.menu_controller.show_menu()
 
     def toggle_open_window_collapse(self):
         """Ctrl+0 masque ou réaffiche la fenêtre Ctrl+9 actuellement ouverte."""
-        if self.document_dialog is not None:
-            if self.document_dialog.isVisible():
-                self.document_dialog.hide()
-            else:
-                self.document_dialog.show()
-                self.document_dialog.raise_()
-                self.document_dialog.activateWindow()
-                for delay in (0, 80, 180):
-                    QTimer.singleShot(delay, self.document_dialog.focus_message_input)
-            return
-        if not self.isVisible():
-            return
-        if self.is_collapsed:
-            self.expanded_height = self.calculate_expanded_height()
-            self.animate_height(self.expanded_height, True)
-        else:
-            self.animate_height(38, False)
+        self.document_controller.toggle_window()
 
     def _execute_direct_impl(self, index):
         """Ctrl+N utilise le texte sélectionné ; Ctrl+9 ouvre l'analyse documentaire."""
@@ -604,52 +491,13 @@ class AssistantWindow(QWidget):
 
     def show_document_dialog(self):
         """Ouvre la fenêtre Document intégrée utilisée par Ctrl+9."""
-        if self.document_dialog is not None and self.document_dialog.isVisible():
-            self.document_dialog.raise_()
-            self.document_dialog.activateWindow()
-            for delay in (0, 80, 180):
-                QTimer.singleShot(delay, self.document_dialog.focus_message_input)
-            return
-        self.document_history = []
-        self.document_session_documents = []
-        self.document_dialog = DocumentDialog(self)
-        self._restore_document_dialog_position(self.document_dialog)
-        self.document_dialog.ask_requested.connect(self.start_document_analysis)
-        self.document_dialog.finished.connect(
-            self._remember_document_dialog_position
-        )
-        self.document_dialog.show()
-        self.document_dialog.raise_()
-        self.document_dialog.activateWindow()
-        for delay in (0, 80, 180):
-            QTimer.singleShot(delay, self.document_dialog.focus_message_input)
+        self.document_controller.show_dialog()
 
     def _remember_document_dialog_position(self, _result=0):
-        dialog = self.document_dialog
-        if dialog is not None:
-            self.document_dialog_position = QPoint(dialog.pos())
-            self.document_dialog = None
+        self.document_controller.remember_position(_result)
 
     def _restore_document_dialog_position(self, dialog):
-        position = self.document_dialog_position
-        if position is None:
-            parent_rect = self.frameGeometry()
-            position = parent_rect.topLeft() + QPoint(24, 24)
-
-        screen = QApplication.screenAt(position) or QApplication.primaryScreen()
-        if screen is None:
-            dialog.move(position)
-            return
-        available = screen.availableGeometry()
-        x = max(
-            available.left(),
-            min(position.x(), available.right() - dialog.width() + 1),
-        )
-        y = max(
-            available.top(),
-            min(position.y(), available.bottom() - dialog.height() + 1),
-        )
-        dialog.move(x, y)
+        self.document_controller._restore_position(dialog)
 
     def start_document_analysis(self, paths, question, audio_data=None, forced_tool=None):
         """Analyse une nouvelle question en conservant l'historique de la conversation."""
@@ -681,6 +529,7 @@ class AssistantWindow(QWidget):
             history=history,
             skill_manager=self.skill_manager,
             forced_tool=forced_tool,
+            auth_token=LLAMA_SERVER_MANAGER.auth_token,
         )
         self.document_thread.new_text.connect(self.update_document_text)
         self.document_thread.thinking_text.connect(self.update_document_thinking)
@@ -727,7 +576,7 @@ class AssistantWindow(QWidget):
             if os.path.basename(path).casefold() == requested_name:
                 try:
                     _open_pdf_at_page(path, int(page))
-                except Exception:
+                except Exception:  # noqa: BLE001
                     LOGGER.exception("Impossible d'ouvrir la source demandée")
                 return
 
@@ -744,7 +593,7 @@ class AssistantWindow(QWidget):
             path = by_name.get(os.path.basename(filename.strip()).lower())
             if path:
                 try: _open_pdf_at_page(path, int(page))
-                except Exception: LOGGER.exception("Impossible d'ouvrir le PDF cité")
+                except Exception: LOGGER.exception("Impossible d'ouvrir le PDF cité")  # noqa: BLE001
                 return
 
     def handle_document_error(self, message, _incompatible):
@@ -793,7 +642,7 @@ class AssistantWindow(QWidget):
         self.set_automatic_reading_enabled(not current)
 
     def quit_application(self):
-        self.stop_generation()
+        self.shutdown_background_threads()
         LLAMA_SERVER_MANAGER.stop()
         app = QApplication.instance()
 
@@ -812,6 +661,56 @@ class AssistantWindow(QWidget):
         # Nettoyage de securite pour d'eventuels raccourcis residuels.
         keyboard.unhook_all_hotkeys()
         app.quit()
+
+    def shutdown_background_threads(self):
+        """Arrête et attend tous les threads avant la destruction de la fenêtre."""
+        if getattr(self, "_shutdown_started", False):
+            return
+        self._shutdown_started = True
+
+        for timer_name in (
+            "loading_timer",
+            "stream_render_timer",
+            "startup_status_timer",
+        ):
+            timer = getattr(self, timer_name, None)
+            if timer is not None:
+                timer.stop()
+
+        threads = (
+            ("llama", self.thread, "stop"),
+            ("document", self.document_thread, "stop"),
+            ("audio", self.audio_thread, "stop_recording"),
+            ("tts", self.tts_thread, "stop"),
+            ("runtime-info", self.runtime_info_thread, None),
+            ("startup-status", getattr(self, "startup_status_thread", None), None),
+            ("kokoro-warmup", self.kokoro_warmup_thread, None),
+        )
+
+        self.stop_speech()
+        self.recording_indicator.hide()
+
+        for name, thread, stop_method in threads:
+            if thread is None or not thread.isRunning():
+                continue
+            if stop_method is not None:
+                stop = getattr(thread, stop_method, None)
+                if stop is not None:
+                    stop()
+            else:
+                thread.requestInterruption()
+            if not thread.wait(10000):
+                LOGGER.warning(
+                    "Le thread %s n'a pas terminé avant la fermeture de l'application",
+                    name,
+                )
+
+        self.thread = None
+        self.document_thread = None
+        self.audio_thread = None
+        self.tts_thread = None
+        self.runtime_info_thread = None
+        self.startup_status_thread = None
 
     def open_settings(self):
         self.cancel_voice_operation()
@@ -836,7 +735,7 @@ class AssistantWindow(QWidget):
     def update_window_title(self):
         title = re.sub(r"\s+", " ", self.selected_text).strip() if self.selected_text else ""
         self.title_label.setText(title or "…")
-        self.title_label.setToolTip(title)
+        install_tooltip(self.title_label, title)
 
     parse_audio_response = staticmethod(parse_audio_response)
     format_inline_markdown = staticmethod(format_inline_markdown)
@@ -958,7 +857,7 @@ class AssistantWindow(QWidget):
                 LOGGER.warning("Fichier lié introuvable : %s", local_path)
                 return
             QDesktopServices.openUrl(url)
-        except Exception:
+        except Exception:  # noqa: BLE001
             LOGGER.exception("Impossible d'ouvrir le lien : %s", href)
 
     def copy_response(self):
@@ -1045,6 +944,7 @@ class AssistantWindow(QWidget):
             skill_manager=self.skill_manager,
             enable_tools=(str(action_cfg.get("name", "")).strip().casefold() != "améliorer"),
             max_tokens=self.config.get("llm_max_tokens", 8192),
+            auth_token=LLAMA_SERVER_MANAGER.auth_token,
         )
         self.thread.new_text.connect(self.update_text)
         self.thread.thinking_text.connect(self.update_thinking)
@@ -1077,69 +977,17 @@ class AssistantWindow(QWidget):
         self.show_window()
 
     def show_window(self, preserve_position=False):
-        previous_position = self.pos()
-        self.stop_height_animation()
-        self.separator_container.show()
-        self.scroll_area.show()
-        self.is_collapsed = False
-
-        # Applique toujours la hauteur calculée. Une comparaison avec la hauteur
-        # courante conservait parfois une géométrie intermédiaire trop petite.
-        self.expanded_height = self.calculate_expanded_height()
-        self.resize(self.width(), self.expanded_height)
-
-        cursor_pos = QCursor.pos()
-        screen = QApplication.screenAt(cursor_pos) or QApplication.primaryScreen()
-        screen_rect = screen.availableGeometry()
-        x = cursor_pos.x()
-        y = cursor_pos.y() + 20
-        if x + self.width() > screen_rect.right() - 10: x = screen_rect.right() - self.width() - 10
-        if x < screen_rect.left() + 10: x = screen_rect.left() + 10
-        if y + self.height() > screen_rect.bottom() - 10: y = cursor_pos.y() - self.height() - 20
-        if y < screen_rect.top() + 10: y = screen_rect.top() + 10
-        if preserve_position and self.isVisible():
-            self.move(previous_position)
-        else:
-            self.move(x, y)
-        self.show()
+        self.geometry_controller.show_window(preserve_position)
         self.raise_()
         self.activateWindow()
 
     @staticmethod
     def _created_file_paths(detail):
-        """Extrait les chemins de fichiers existants d'un résultat de skill."""
-        try:
-            payload = json.loads(detail or "null")
-        except (json.JSONDecodeError, TypeError):
-            payload = detail
-        values = []
-        def visit(value):
-            if isinstance(value, dict):
-                for child in value.values(): visit(child)
-            elif isinstance(value, (list, tuple, set)):
-                for child in value: visit(child)
-            elif isinstance(value, str):
-                values.append(value.strip())
-        visit(payload)
-        extensions = {".docx", ".pdf", ".xlsx", ".xls", ".pptx", ".csv", ".txt"}
-        found = []
-        for value in values:
-            if not value or Path(value).suffix.lower() not in extensions:
-                continue
-            candidate = os.path.expandvars(os.path.expanduser(value))
-            if not os.path.isabs(candidate):
-                candidate = os.path.join(APP_DIR, candidate)
-            candidate = os.path.normpath(candidate)
-            if os.path.isfile(candidate) and candidate not in found:
-                found.append(candidate)
-        return found
+        return created_file_paths(detail)
 
     @staticmethod
     def _file_link_markdown(path):
-        # Masque uniquement l'extension dans le libellé affiché.
-        # Le lien file:/// conserve le nom réel complet afin de rester ouvrable.
-        display_name = Path(path).stem
-        return f"📄 [{display_name}]({Path(path).resolve().as_uri()})\n"
+        return file_link_markdown(path)
 
     def update_tool_event(self, phase, name, detail):
         """Affiche seulement le nom de l'outil, uniquement pendant son exécution."""

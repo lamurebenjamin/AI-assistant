@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
 """Composant de bloc de commandes Slash Command '/' pour filtrer et exécuter les skills."""
 
-from typing import Any, Dict, List, Optional
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer, Signal
+from typing import Any
+
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -16,12 +15,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import src.ui.design_tokens as t
 from src.ui.icons import get_file_type_icon
 from src.ui.stylesheet import (
     qss_slash_command_label,
     qss_slash_description,
     qss_slash_header,
+    qss_slash_icon_label,
     qss_slash_popup,
     qss_transparent_surface,
 )
@@ -30,7 +29,7 @@ from src.ui.stylesheet import (
 class SlashCommandItemWidget(QWidget):
     """Ligne représentant une action de skill dans le menu Slash Command."""
 
-    def __init__(self, action: Dict[str, Any], parent=None):
+    def __init__(self, action: dict[str, Any], parent=None):
         super().__init__(parent)
         self.action = action
         self._build_ui()
@@ -49,7 +48,7 @@ class SlashCommandItemWidget(QWidget):
             icon_label.setPixmap(icon.pixmap(QSize(24, 24), QIcon.Normal, QIcon.On))
         else:
             icon_label.setText("")
-            icon_label.setStyleSheet("font-size: 14px; " + qss_transparent_surface())
+            icon_label.setStyleSheet(qss_slash_icon_label())
         icon_label.setFixedSize(26, 26)
         icon_label.setAlignment(Qt.AlignCenter)
         icon_label.setStyleSheet(qss_transparent_surface())
@@ -158,8 +157,8 @@ class SlashCommandPopup(QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.all_actions: List[Dict[str, Any]] = []
-        self.filtered_actions: List[Dict[str, Any]] = []
+        self.all_actions: list[dict[str, Any]] = []
+        self.filtered_actions: list[dict[str, Any]] = []
         self.setObjectName("SlashCommandPopup")
         # Activer le fond stylistique pour que border-radius clippe correctement le contenu
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -187,15 +186,14 @@ class SlashCommandPopup(QFrame):
         self.list_widget.currentRowChanged.connect(self._update_selected_description)
         layout.addWidget(self.list_widget)
 
-    def set_actions(self, actions: List[Dict[str, Any]]):
+    def set_actions(self, actions: list[dict[str, Any]]):
         """Définit l'ensemble des actions de skills disponibles."""
         self.all_actions = list(actions)
 
     def filter_actions(self, query: str) -> bool:
         """Filtre les actions selon la chaîne saisie après '/'. Retourne True si des actions correspondent."""
         clean_query = query.strip().lower()
-        if clean_query.startswith("/"):
-            clean_query = clean_query[1:]
+        clean_query = clean_query.removeprefix("/")
 
         if not clean_query:
             self.filtered_actions = list(self.all_actions)
@@ -311,4 +309,3 @@ class SlashCommandPopup(QFrame):
 
     def reposition_above(self, target_widget=None):
         """Méthode conservée pour compatibilité ; le placement est géré par le layout."""
-        pass

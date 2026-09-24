@@ -1,6 +1,6 @@
 # Audit de conformité UI, règles et contrôles
 
-Date de l'audit : 2026-09-22
+Date de l'audit : 2026-09-24
 Périmètre : interface PySide6, design system, thèmes, assets, Markdown et
 contrôles de validation.
 Méthode : lecture statique, recherches ciblées et exécution des contrôles
@@ -14,19 +14,21 @@ présents dans le dépôt et dans la CI Windows.
 | Thèmes clair/sombre | 🟢 Conforme | Les tokens sont paritaires et les fenêtres persistantes exposent `refresh_theme()`. |
 | États interactifs | 🟢 Couvert | Les états principaux, le focus du compositeur et les tooltips sont testés. |
 | Assets et icônes | 🟢 Conforme | Les skills déclarent leurs assets et disposent de fallbacks testés. |
-| Tests automatisés | 🟢 Bonne couverture | 53 tests couvrent UI, configuration, skills, parsing LLM, serveur local, threads, contrats et contrôleurs UI. |
-| Contrôles techniques | 🟢 Conforme | Compilation et contrôle `git diff --check` réussissent sur le périmètre audité. |
+| Tests automatisés | 🟢 Bonne couverture | 108 tests couvrent UI, configuration, skills, parsing LLM, serveur local, authentification locale, threads, contrats et contrôleurs UI. |
+| Contrôles techniques | 🟢 Conforme | Compilation, tests de contraste et contrôle `git diff --check` réussissent sur le périmètre audité. |
 
 ## Contrôles exécutés
 
 | Contrôle | Résultat | Limite |
 | --- | --- | --- |
-| `.\.venv\Scripts\python.exe -m unittest discover -s tests -v` | ✅ 53 tests réussis | Couverture headless UI, configuration, skills, parsing LLM, serveur local, threads, contrats et contrôleurs UI. |
-| `python -m unittest discover -s tests -v` | ✅ 53 tests réussis | Même suite headless validée avec Python système. |
+| `.\.venv\Scripts\python.exe -m unittest discover -s tests -v` | ✅ 108 tests réussis | Couverture headless UI, configuration, skills, parsing LLM, serveur local, authentification locale, threads, contrats et contrôleurs UI. |
+| `.\.venv\Scripts\python.exe -m compileall -q src core skills main.pyw tests` | ✅ Réussi | Compilation Python complète. |
+| `.\.venv\Scripts\python.exe -m ruff check .` | ⚠️ Échec | Violations de style Ruff à traiter ; aucun test fonctionnel en échec. |
 | `.venv\Scripts\python.exe -m compileall -q src core skills main.pyw tests` | ✅ Réussi | Ne détecte pas les incohérences de thème ou de QSS. |
 | `git diff --check -- src/ui tests README.md UI_DESIGN_RULES.md` | ✅ Réussi | Le périmètre UI audité est propre. |
 | Recherche de couleurs dans les surfaces migrées | ✅ Aucune occurrence dans les fichiers ciblés | Les registres d'icônes et certains styles globaux conservent des valeurs intentionnelles mais non testées. |
 | Inventaire des skills | ✅ `docx`, `excel`, `pdf`, `pptx`, `ftnc` possèdent un asset déclaré | Dimensions, lisibilité et contraste non automatisés. |
+| Contraste sémantique | ✅ | Ratios AA automatisés pour les textes principaux, liens, boutons primaires et focus dans les deux thèmes. |
 
 ## Findings
 
@@ -43,10 +45,15 @@ manuelle pour Acrylic, DPI, tray et multi-écrans.
 
 ### ✅ Résolu — Couverture de tests UI et métier
 
-Les douze suites de [`tests/`](tests/) contiennent désormais 53 tests headless
+Les suites de [`tests/`](tests/) contiennent désormais 108 tests headless
 couvrant les widgets partagés, les états interactifs, les tooltips, le focus
 clavier, les textes longs, le Markdown, les assets, la configuration, les
-skills, le parsing LLM, le serveur local et le cycle de vie des threads.
+skills, le parsing LLM, le serveur local, son authentification locale et le
+cycle de vie des threads.
+
+Les messages d'erreur audio, TTS et skill invalide imprimés pendant la suite
+sont des scénarios négatifs attendus et validés par des tests passants. Ils ne
+constituent pas des régressions.
 
 ### ✅ Amélioré — Styles locaux dans les fenêtres
 
@@ -87,6 +94,13 @@ pas une divergence de palette.
 Les scénarios Acrylic, DPI, tray, raccourcis globaux, tooltips frameless et
 multi-écrans ne sont pas fiables en headless. Ils doivent rester dans la
 checklist manuelle de release Windows.
+
+### ✅ Amélioré — Contraste automatisé
+
+Les ratios de contraste des textes sémantiques et des boutons primaires sont
+désormais calculés dans `tests/test_ui_design_system.py` pour les thèmes clair
+et sombre. La mesure couvre les états normal, hover et pressed des boutons
+primaires ainsi que le contraste minimal du focus.
 
 ## Matrice règles → contrôles
 

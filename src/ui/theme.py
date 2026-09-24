@@ -1,11 +1,17 @@
-"""Gestion du thème visuel : acrylique Windows, coins arrondis, palette Antigravity."""
+"""Gestion du thème visuel : Fluent Windows 11, coins arrondis, palette Antigravity."""
 
 import ctypes
 import sys
-from PySide6.QtCore import QEvent, QObject, Qt
-from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QToolTip
 
+from PySide6.QtGui import QColor, QPalette
+from qfluentwidgets import (
+    SystemThemeListener,
+    Theme,
+    setTheme,
+    setThemeColor,
+)
+
+# ─── Acrylic / Mica via ctypes (fallback pour fenêtres frameless custom) ─────
 
 class AccentPolicy(ctypes.Structure):
     _fields_ = [
@@ -24,13 +30,17 @@ class WindowCompositionAttributeData(ctypes.Structure):
     ]
 
 
-def apply_acrylic_blur(hwnd: int, color: int = None) -> bool:
+def apply_acrylic_blur(hwnd: int, color: int | None = None) -> bool:
     """Applique un acrylique Windows réellement translucide sous Windows 10/11."""
     if sys.platform != "win32":
         return False
 
     if color is None:
-        from src.ui.design_tokens import ACRYLIC_NATIVE_DARK, ACRYLIC_NATIVE_LIGHT, is_dark_theme
+        from src.ui.design_tokens import (
+            ACRYLIC_NATIVE_DARK,
+            ACRYLIC_NATIVE_LIGHT,
+            is_dark_theme,
+        )
         color = ACRYLIC_NATIVE_DARK if is_dark_theme() else ACRYLIC_NATIVE_LIGHT
 
     try:
@@ -67,20 +77,17 @@ def apply_rounded_corners(hwnd: int, round_type: int = 2) -> None:
         pass
 
 
-class CleanToolTipFilter(QObject):
-    """Évite le bug de rectangle noir sous Windows sur fenêtres translucides."""
-
-    def eventFilter(self, watched, event):
-        if event.type() == QEvent.ToolTip:
-            text = watched.toolTip() if hasattr(watched, "toolTip") else ""
-            if text:
-                QToolTip.showText(event.globalPos(), text, None)
-                return True
-        return super().eventFilter(watched, event)
 
 
-def apply_app_theme(app, theme_name: str = None) -> None:
-    """Applique le thème (palette Qt, menus, tooltips, icônes) à l'application entière."""
+
+# ─── Thème principal via QFluentWidgets ───────────────────────────────────────
+
+def apply_app_theme(app, theme_name: str | None = None) -> None:
+    """Applique le thème QFluentWidgets + palette Qt à l'application entière.
+
+    QFluentWidgets gère nativement Mica/Acrylic, les couleurs d'accent Windows 11
+    et la synchronisation automatique avec le thème système via SystemThemeListener.
+    """
     import src.ui.design_tokens as t
     from src.ui.icons import update_icons_for_theme
     from src.ui.stylesheet import qss_menu, qss_tooltip
@@ -90,6 +97,11 @@ def apply_app_theme(app, theme_name: str = None) -> None:
 
     if theme_name:
         t.set_active_theme(theme_name)
+        # Synchroniser QFluentWidgets avec notre token
+        qfw_theme = Theme.DARK if t.is_dark_theme() else Theme.LIGHT
+        setTheme(qfw_theme, lazy=True)
+        # Couleur d'accent = bleu Antigravity
+        setThemeColor(QColor(t.COLOR_PRIMARY), lazy=True)
 
     is_dark = t.is_dark_theme()
     update_icons_for_theme(is_dark)
@@ -111,9 +123,6 @@ def apply_app_theme(app, theme_name: str = None) -> None:
     app.setPalette(palette)
 
     app.setStyleSheet(qss_menu() + qss_tooltip())
-    if not hasattr(app, "_clean_tooltip_filter"):
-        app._clean_tooltip_filter = CleanToolTipFilter(app)
-        app.installEventFilter(app._clean_tooltip_filter)
 
     app._theme_refresh_running = True
     try:
@@ -133,3 +142,16 @@ def refresh_open_windows(app) -> None:
 def apply_light_popup_theme(app) -> None:
     """Compatibilité avec l'ancien nom de fonction : applique le thème actif."""
     apply_app_theme(app)
+
+
+def install_system_theme_listener(app) -> "SystemThemeListener | None":
+    """Installe le listener QFluentWidgets pour synchroniser le thème Windows 11.
+
+    Retourne le listener (à conserver en vie sur l'objet app).
+    """
+    try:
+        listener = SystemThemeListener(app)
+        listener.start()
+        return listener
+    except Exception:  # noqa: BLE001
+        return None

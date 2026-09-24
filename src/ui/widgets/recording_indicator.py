@@ -1,20 +1,20 @@
 """Fenêtre flottante affichée lors de la captation vocale."""
 
 import time
+
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
-    QHBoxLayout,
     QLabel,
     QVBoxLayout,
     QWidget,
 )
 
-from src.config.schema import LOGGER
 import src.ui.design_tokens as t
-from src.ui.stylesheet import build_acrylic_window_qss
+from src.config.schema import LOGGER
+from src.ui.stylesheet import qss_voice_recording_indicator
 from src.ui.theme import apply_acrylic_blur, apply_rounded_corners
 from src.ui.widgets.audio_bars import LiveAudioIndicator
 from src.ui.widgets.hairline import HairlineSeparator
@@ -84,19 +84,7 @@ class RecordingIndicator(QWidget):
         self.timer.timeout.connect(self._tick)
 
     def _voice_qss(self) -> str:
-        return (
-            build_acrylic_window_qss()
-            + f"""
-            QLabel#VoiceText, QLabel#VoiceClock {{
-                background: transparent;
-                color: {t.COLOR_TEXT_PRIMARY};
-                border: none;
-                font-family: {t.FONT_TEXT};
-                font-size: {t.SIZE_LG};
-            }}
-            QLabel#VoiceClock {{ color: {t.COLOR_TEXT_MUTED}; }}
-            """
-        )
+        return qss_voice_recording_indicator()
 
     def refresh_theme(self) -> None:
         if hasattr(self, "panel"):

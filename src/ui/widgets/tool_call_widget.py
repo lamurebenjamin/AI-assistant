@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Widget d'affichage d'exécution d'outils style timeline Antigravity IDE.
 
 Reproduit fidèlement l'esthétique Antigravity :
@@ -8,47 +7,35 @@ Reproduit fidèlement l'esthétique Antigravity :
 - Prise en charge des thèmes sombre et clair.
 """
 
-import html
-import json
-import math
 import re
 import time
+
 from PySide6.QtCore import (
-    QEasingCurve,
-    QEvent,
-    QPropertyAnimation,
-    QRectF,
     Qt,
-    Property,
     Signal,
-    QTimer,
 )
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
     QLabel,
     QSizePolicy,
-    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
 
 import src.ui.design_tokens as t
-from src.ui.icons import create_svg_icon, get_application_icon, get_default_tool_icon
-from src.ui.widgets.thinking_dots import ShimmerLabel
-from src.ui.stylesheet import (
-    qss_tool_call_step,
-    qss_tool_code_browser,
-    qss_transparent_surface,
-)
 from src.rendering.markdown import markdown_to_html
 from src.ui.status_formatters import (
     format_duration,
     format_thinking_status,
     format_tool_group_status,
 )
-
+from src.ui.stylesheet import (
+    qss_thinking_details,
+    qss_tool_group_header,
+    qss_tool_steps_container,
+    qss_transparent_surface,
+)
+from src.ui.widgets.thinking_dots import ShimmerLabel
 
 CHEVRON_SPACING = 4
 CHEVRON_FONT_SIZE = 18
@@ -60,9 +47,7 @@ BRAIN_ICON_SVG = (
 )
 
 
-from src.ui.widgets.timeline_header import ChevronLabel, CollapsibleHeader
-
-
+from src.ui.widgets.timeline_header import CollapsibleHeader
 from src.ui.widgets.tool_call_step import ToolCallStepWidget
 
 
@@ -77,7 +62,7 @@ class ToolExecutionGroupWidget(QWidget):
 
     toggled = Signal()
 
-    def __init__(self, tools: list, turn: dict = None, parent=None):
+    def __init__(self, tools: list, turn: dict | None = None, parent=None):
         super().__init__(parent)
         self.tools = tools if isinstance(tools, list) else [tools]
         self.turn = turn or {}
@@ -92,7 +77,7 @@ class ToolExecutionGroupWidget(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(2)
 
-        is_dark = t.is_dark_theme()
+        t.is_dark_theme()
         muted_color = t.COLOR_TEXT_SECONDARY
 
         any_running = any(t.get("status") == "running" for t in self.tools)
@@ -103,13 +88,7 @@ class ToolExecutionGroupWidget(QWidget):
         step_count = len(self.tools)
         header_title = self._format_header_title(step_count, any_running, duration_text)
         self.header_label = QLabel(header_title, self)
-        self.header_label.setStyleSheet(f"""
-            font-family: {t.FONT_TEXT};
-            font-size: {t.SIZE_SM};
-            font-weight: 500;
-            color: {muted_color};
-            background: transparent;
-        """)
+        self.header_label.setStyleSheet(qss_tool_group_header(muted_color))
         self.header_label.installEventFilter(self)
         self.header_label.setFixedHeight(t.HEADER_ROW_HEIGHT)
         self.header_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -131,9 +110,7 @@ class ToolExecutionGroupWidget(QWidget):
 
         # ── 2. Conteneur des étapes indenté ───────────────────────────
         self.steps_container = QWidget(self)
-        self.steps_container.setStyleSheet(
-            f"background: transparent; border-left: 1px solid {t.COLOR_BORDER};"
-        )
+        self.steps_container.setStyleSheet(qss_tool_steps_container())
         steps_layout = QVBoxLayout(self.steps_container)
         # Indentation de 12px vers la droite pour les étapes
         steps_layout.setContentsMargins(t.TIMELINE_INDENT, 1, 0, 2)
@@ -240,13 +217,7 @@ class ThinkingGroupWidget(QWidget):
         self.details.setTextFormat(Qt.RichText)
         self.details.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.details.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        self.details.setStyleSheet(
-            f"background:transparent; border-left:1px solid {t.COLOR_BORDER}; "
-            "margin-left:7px; "
-            f"padding:0 8px 2px 10px; font-family:{t.FONT_TEXT}; "
-            f"font-size:{font_size}px; font-style:italic; "
-            f"color:{t.COLOR_TEXT_SECONDARY};"
-        )
+        self.details.setStyleSheet(qss_thinking_details(font_size))
         layout.addWidget(self.details)
 
     def append_text(self, text: str):

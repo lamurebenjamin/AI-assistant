@@ -1,13 +1,12 @@
-# -*- coding: utf-8 -*-
 """Gestionnaire de cycle de vie du processus local llama-server.exe."""
 
 import atexit
 import os
+import secrets
 import subprocess
 import sys
-from typing import Optional, Tuple
 
-from src.config.schema import APP_DIR, LOGGER
+from src.config.schema import APP_DIR
 
 
 class LlamaServerManager:
@@ -20,11 +19,12 @@ class LlamaServerManager:
     """
 
     def __init__(self):
-        self.process: Optional[subprocess.Popen] = None
+        self.process: subprocess.Popen | None = None
         self.log_handle = None
+        self.auth_token: str | None = None
 
     @property
-    def pid(self) -> Optional[int]:
+    def pid(self) -> int | None:
         """Retourne le PID du processus s'il est actif, sinon None."""
         if self.is_running() and self.process is not None:
             return self.process.pid
@@ -39,7 +39,7 @@ class LlamaServerManager:
     def is_running(self) -> bool:
         return self.process is not None and self.process.poll() is None
 
-    def start(self, config: dict) -> Tuple[bool, str]:
+    def start(self, config: dict) -> tuple[bool, str]:
         if self.is_running():
             return True, "Serveur déjà démarré"
 
@@ -52,10 +52,21 @@ class LlamaServerManager:
         if not os.path.isfile(model):
             return False, f"Modèle introuvable : {model}"
 
-        command = [exe, "-m", model] + [str(x) for x in cfg.get("arguments", [])]
+        arguments = [str(x) for x in cfg.get("arguments", [])]
+        filtered_arguments = []
+        index = 0
+        while index < len(arguments):
+            if arguments[index] in {"--api-key", "--api-key-file"}:
+                index += 2
+                continue
+            filtered_arguments.append(arguments[index])
+            index += 1
+        self.auth_token = secrets.token_urlsafe(32)
+        command = [exe, "-m", model, *filtered_arguments, "--api-key", self.auth_token]
         try:
             log_path = os.path.join(APP_DIR, "llama-server.log")
-            self.log_handle = open(log_path, "a", encoding="utf-8", buffering=1)
+            # Le handle doit rester ouvert pendant toute la durée du processus.
+            self.log_handle = open(log_path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115
             flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             self.process = subprocess.Popen(
                 command,
@@ -68,21 +79,23 @@ class LlamaServerManager:
             return True, f"Démarrage en cours, PID {self.process.pid}"
         except (OSError, ValueError) as error:
             self.process = None
+            self.auth_token = None
             if self.log_handle:
                 try:
                     self.log_handle.close()
-                except Exception:
+                except Exception:  # noqa: BLE001,S110
                     pass
                 self.log_handle = None
             return False, str(error)
 
-    def stop(self) -> Tuple[bool, str]:
+    def stop(self) -> tuple[bool, str]:
         if not self.is_running():
             self.process = None
+            self.auth_token = None
             if self.log_handle:
                 try:
                     self.log_handle.close()
-                except Exception:
+                except Exception:  # noqa: BLE001,S110
                     pass
                 self.log_handle = None
             return True, "Serveur arrêté"
@@ -99,15 +112,16 @@ class LlamaServerManager:
             return False, str(error)
         finally:
             self.process = None
+            self.auth_token = None
             if self.log_handle:
                 try:
                     self.log_handle.close()
-                except Exception:
+                except Exception:  # noqa: BLE001,S110
                     pass
                 self.log_handle = None
 
 
-_SERVER_MANAGER_INSTANCE: Optional[LlamaServerManager] = None
+_SERVER_MANAGER_INSTANCE: LlamaServerManager | None = None
 
 
 def get_server_manager() -> LlamaServerManager:

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tokens de design centralisés pour l'application Assistant IA.
 
 Ce module est la source de vérité unique pour toutes les valeurs
@@ -15,6 +14,7 @@ THEME_DARK = {
     # ── Neutrals / Texte ─────────────────────────────────────────────────────────
     "COLOR_TEXT_PRIMARY": "#E0E0E0",      # Texte principal Antigravity
     "COLOR_TEXT_ACTIVE": "#FFFFFF",       # Texte et icônes des éléments actifs
+    "COLOR_PRIMARY_TEXT": "#FFFFFF",      # Texte sur les boutons primaires
     "COLOR_TEXT_SECONDARY": "#9D9D9D",    # Sous-labels, secondaire
     "COLOR_TEXT_MUTED": "#6E7681",        # Désactivé, placeholder
     "COLOR_TEXT_INVERSE": "#111111",      # Texte sur fond clair inversé
@@ -37,7 +37,7 @@ THEME_DARK = {
 
     # ── Brand / Primary (Bleu Antigravity) ───────────────────────────────────────
     "COLOR_PRIMARY": "#0078D4",           # Bleu principal
-    "COLOR_PRIMARY_HOVER": "#1E88E5",     # Hover bouton principal
+    "COLOR_PRIMARY_HOVER": "#006BB6",     # Hover bouton principal
     "COLOR_PRIMARY_ACTIVE": "#005A9E",    # Pressed bouton principal
     "COLOR_PRIMARY_LIGHT": "#2A2D2E",     # Fond bulle user (gris sombre différencié)
     "COLOR_PRIMARY_BORDER": "#4A4A4A",    # Bordure bulle user (gris moyen)
@@ -99,6 +99,7 @@ THEME_LIGHT = {
     # ── Neutrals / Texte ─────────────────────────────────────────────────────────
     "COLOR_TEXT_PRIMARY": "#111111",
     "COLOR_TEXT_ACTIVE": "#111111",
+    "COLOR_PRIMARY_TEXT": "#FFFFFF",
     "COLOR_TEXT_SECONDARY": "#4B5563",
     "COLOR_TEXT_MUTED": "#8A949F",
     "COLOR_TEXT_INVERSE": "#FFFFFF",

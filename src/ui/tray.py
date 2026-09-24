@@ -1,13 +1,10 @@
 """Gestion de l'icône dans la zone de notification Windows (systray)."""
 
-import os
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QIcon
-from PySide6.QtWidgets import QMenu, QSystemTrayIcon
+from PySide6.QtWidgets import QSystemTrayIcon
+from qfluentwidgets import Action, RoundMenu
 
 from src.config.schema import APP_DIR
 from src.ui.icons import get_app_icon
-from src.ui.stylesheet import qss_menu
 
 
 def create_tray_icon(app, assistant):
@@ -25,27 +22,23 @@ def create_tray_icon(app, assistant):
     tray_icon.setIcon(icon)
     tray_icon.setToolTip("Assistant IA")
 
-    tray_menu = QMenu()
-    tray_menu.setObjectName("TrayLightMenu")
-    tray_menu.setAttribute(Qt.WA_TranslucentBackground, False)
-    tray_menu.setAutoFillBackground(True)
-    tray_menu.setStyleSheet(qss_menu("TrayLightMenu", padding=6))
-    settings_action = QAction("Paramètres", tray_menu)
+    # RoundMenu : coins arrondis natifs Windows 11 (Fluent Design)
+    tray_menu = RoundMenu(parent=None)
+
+    settings_action = Action("Paramètres")
     hotkeys_enabled = bool(assistant.config.get("hotkeys_enabled", True))
-    hotkeys_action = QAction(
+    hotkeys_action = Action(
         "Désactiver les raccourcis" if hotkeys_enabled
         else "Activer les raccourcis",
-        tray_menu,
     )
     automatic_reading_enabled = bool(
         assistant.config.get("text_to_speech", {}).get("automatic_reading", False)
     )
-    automatic_reading_action = QAction(
+    automatic_reading_action = Action(
         "Désactiver la lecture à voix haute" if automatic_reading_enabled
         else "Activer la lecture à voix haute",
-        tray_menu,
     )
-    quit_action = QAction("Quitter", tray_menu)
+    quit_action = Action("Quitter")
 
     settings_action.triggered.connect(assistant.open_settings)
     hotkeys_action.triggered.connect(lambda: assistant.toggle_hotkeys())

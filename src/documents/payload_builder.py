@@ -1,10 +1,8 @@
-# -*- coding: utf-8 -*-
 """Construction des charges utiles documentaires multimodales (texte + images Base64)."""
 
 import base64
 import mimetypes
 import os
-from typing import List, Tuple
 
 from src.documents.pdf_utils import extract_pdf_context
 
@@ -30,7 +28,7 @@ def document_image_data_url(path: str) -> str:
 
 def prepare_document_payload(
     documents: list, max_rendered_images: int = 4
-) -> Tuple[List[str], List[dict], List[Tuple[str, int]]]:
+) -> tuple[list[str], list[dict], list[tuple[str, int]]]:
     """Construit le contexte textuel, les blocs images et le catalogue de sources."""
     text_parts, image_parts, source_pages = [], [], []
     image_count = 0

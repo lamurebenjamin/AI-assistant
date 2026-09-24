@@ -1,15 +1,14 @@
-# -*- coding: utf-8 -*-
 """Threads Qt pour le préchauffage et la synthèse vocale Kokoro."""
 
 import logging
 import os
 import re
 import unicodedata
-from typing import Optional
+from typing import ClassVar
 
 import numpy as np
-from PySide6.QtCore import QThread, Signal
 import sounddevice as sd
+from PySide6.QtCore import QThread, Signal
 
 from src.config.schema import APP_DIR, DEFAULT_CONFIG, LOGGER
 from src.rendering.markdown import markdown_to_spoken_text
@@ -40,7 +39,7 @@ class KokoroWarmupThread(QThread):
             if os.path.isfile(model_path) and os.path.isfile(voices_path):
                 KokoroEngine.get(model_path, voices_path)
                 LOGGER.info("Kokoro préchargé (CUDA).")
-        except Exception:
+        except Exception:  # noqa: BLE001
             LOGGER.exception("Préchargement de Kokoro impossible")
 
 
@@ -53,7 +52,7 @@ class KokoroTtsThread(QThread):
     est terminal lorsque ``run()`` retourne et ne doit pas être redémarré.
     """
 
-    _g2p_cache = {}
+    _g2p_cache: ClassVar[dict] = {}
 
     finished_ok = Signal()
     failed = Signal(str)
@@ -67,7 +66,7 @@ class KokoroTtsThread(QThread):
         self.requestInterruption()
         try:
             sd.stop()
-        except Exception:
+        except Exception:  # noqa: BLE001,S110
             pass
 
     @staticmethod
@@ -80,7 +79,7 @@ class KokoroTtsThread(QThread):
     # Alias pour compatibilité
     _resolve_path = staticmethod(resolve_path)
 
-    def _resolve_output_device(self) -> Optional[int]:
+    def _resolve_output_device(self) -> int | None:
         """Résout une sortie audio par identifiant ou par nom partiel."""
         configured_id = self.config.get("output_device")
         configured_name = str(self.config.get("output_device_name", "")).strip()
@@ -240,10 +239,10 @@ class KokoroTtsThread(QThread):
                     return
                 self.msleep(50)
             self.finished_ok.emit()
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001
             try:
                 sd.stop()
-            except Exception:
+            except Exception:  # noqa: BLE001,S110
                 pass
             LOGGER.exception("Erreur détaillée de synthèse vocale Kokoro")
             if not self.isInterruptionRequested():

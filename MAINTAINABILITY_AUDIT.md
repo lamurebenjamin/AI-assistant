@@ -1,6 +1,6 @@
 # Audit de maintenabilité et de facilité de mise à jour
 
-Date : 2026-09-22 — passe post-commit
+Date : 2026-09-24 — passe de validation post-évolution
 Périmètre : architecture Python, modules UI, configuration, skills,
 dépendances, tests, documentation et contrôles de maintenance.
 
@@ -18,11 +18,11 @@ Les coûts de maintenance restent concentrés dans :
 - [`document_dialog.py`](src/ui/windows/document_dialog.py) : 1 125 lignes ;
 - [`document_conversation_renderer.py`](src/ui/windows/document_conversation_renderer.py) : 525 lignes ;
 - [`document_source_renderer.py`](src/ui/windows/document_source_renderer.py) : 82 lignes ;
-- [`assistant_window.py`](src/ui/windows/assistant_window.py) : 1 218 lignes ;
+- [`assistant_window.py`](src/ui/windows/assistant_window.py) : 1 190 lignes ;
 - [`assistant_response_renderer.py`](src/ui/windows/assistant_response_renderer.py) : 91 lignes ;
 - [`settings_dialog.py`](src/ui/windows/settings_dialog.py) : 736 lignes ;
 - [`stylesheet.py`](src/ui/stylesheet.py) : 680 lignes ;
-- [`tool_call_widget.py`](src/ui/widgets/tool_call_widget.py) : 361 lignes ;
+- [`tool_call_widget.py`](src/ui/widgets/tool_call_widget.py) : 350 lignes ;
 - [`tool_call_step.py`](src/ui/widgets/tool_call_step.py) : 284 lignes ;
 - [`stylesheet_document.py`](src/ui/stylesheet_document.py) : 200 lignes ;
 - [`timeline_header.py`](src/ui/widgets/timeline_header.py) : 214 lignes.
@@ -35,15 +35,25 @@ nécessite donc souvent de parcourir un fichier très large.
 
 | Contrôle | Résultat |
 | --- | --- |
-| Tests complets avec `.venv` | ✅ 55/55 |
-| Tests complets avec Python système | ✅ 55/55 |
+| Tests complets avec `.venv` | ✅ 108/108 |
+| Compilation avec `.venv` | ✅ |
+| Ruff avec `.venv` | ⚠️ violations de style existantes à traiter |
 | Compilation avec les deux interpréteurs | ✅ |
-| `git diff --check` sur le périmètre audité | ✅ |
+| `git diff --check` sur le périmètre audité | ⚠️ avertissements de lignes vides finales dans des fichiers modifiés |
 | Scan des couleurs hex/`rgba` dans l'UI | ✅ Centralisé dans les tokens |
 | Inventaire des modules | ✅ Découpage par domaine présent |
 | Inventaire de la taille des fichiers | ⚠️ Trois modules dépassent 700 lignes |
 | Contrôle automatique de taille | ✅ `scripts/check_module_sizes.py` avec seuil par défaut et allowlist documentée |
 | Rapport de couverture CI | ✅ `coverage report --show-missing` dans le workflow Windows |
+
+La suite `.venv\Scripts\python.exe -m unittest discover -s tests -v` a exécuté
+108 tests : 108 réussites, 0 échec et 0 test ignoré. Les tests de contraste
+sémantique sont couverts par `test_ui_design_system`.
+Ruff a été exécuté avec l'environnement `.venv` et ne signale plus de
+violation. Les suppressions locales restantes documentent des captures
+d'erreurs larges et des callbacks UI intentionnels, à revoir lors d'une passe
+comportementale dédiée. Les messages audio, TTS et skill invalide visibles dans
+la sortie sont des scénarios négatifs attendus par les tests.
 
 Le dernier commit applicatif est `e408f1a`. Le worktree contient encore des
 modifications volontairement hors de ce commit dans `src/llm/` et `skills/`,
@@ -81,7 +91,7 @@ Les règles de mise à jour visuelle sont documentées dans
 
 ### Validation reproductible
 
-La suite `.venv` et l'interpréteur Python système passent chacun 55 tests. Les contrôles
+La suite `.venv` passe actuellement 108 tests sur 108. Les contrôles
 statiques empêchent déjà plusieurs régressions : couleurs hors tokens,
 `rgba(...)` dispersés, dimensions fixes littérales dans les widgets partagés et
 helpers QSS non couverts.
@@ -104,9 +114,9 @@ Les fenêtres principales regroupent trop de responsabilités :
 difficulté de revue et temps d'onboarding élevé.
 
 **Action restante :** poursuivre l'extraction par responsabilité sur la fenêtre
-de paramètres encore volumineuse :
-
-1. `settings_dialog.py` : validateurs de configuration résiduels.
+de paramètres encore volumineuse. La validation et la normalisation de
+configuration sont désormais extraites ; les responsabilités UI restantes
+peuvent être traitées dans une passe ultérieure.
 
 Chaque extraction doit conserver l'API publique de la fenêtre et ajouter des
 tests ciblés avant suppression de l'ancien code.
@@ -173,7 +183,11 @@ Les suites indépendantes suivantes sont maintenant présentes :
 - `tests/test_thread_lifecycle.py`.
 
 Les tests restent sans matériel ni serveur réel, avec répertoires temporaires,
-fixtures et adapters simulés. Les 53 tests passent dans `.venv`.
+fixtures et adapters simulés. Les 108 tests passent dans `.venv`, notamment les
+tests d'authentification locale de `llama-server` (`tests/test_local_auth.py`).
+Les messages d'erreur audio, TTS et skill invalide affichés pendant la suite
+correspondent à des scénarios négatifs vérifiés par les tests et ne sont pas des
+échecs de test.
 Le dernier rapport `coverage` couvre 35 % de `src` et `core` ; il est publié
 comme indicateur de progression dans la CI, sans seuil bloquant tant que les
 surfaces UI natives et les dépendances matérielles ne sont pas isolées.
@@ -225,6 +239,16 @@ Les dictionnaires de payload LLM restent volontairement souples car leur forme
 est imposée par la compatibilité OpenAI/llama.cpp ; les points d'entrée stables
 sont annotés avec `Dict[str, Any]` plutôt que de masquer les extensions
 possibles par des casts.
+La validation et la normalisation des valeurs éditées par `SettingsDialog` sont
+désormais isolées dans
+[`settings_config.py`](src/ui/windows/settings_config.py), avec des tests
+unitaires indépendants de Qt. Les onglets Apparence et Ctrl+9 sont également
+construits par les classes autonomes `AppearanceTab` et `Ctrl9Tab` dans
+[`settings_tabs.py`](src/ui/windows/settings_tabs.py), avec conservation des
+attributs publics historiques sur la façade.
+Les réponses complètes de la timeline d'outils sont également testées sans
+réseau avec des fixtures d'intégration Qt dans
+[`test_tool_timeline_integration.py`](tests/test_tool_timeline_integration.py).
 
 ### ✅ Résolu — Contrôles qualité automatisés
 
@@ -274,8 +298,12 @@ affichage interactif.
 - ✅ extraire l'orchestration audio/TTS, tray et statut de
   `assistant_window.py` ;
 - ✅ extraire le rendu HTML et le streaming de `assistant_window.py` ;
+- ✅ extraire le formatage des fichiers produits par les tools de
+  `assistant_window.py` dans `assistant_file_links.py`, en conservant les
+  méthodes de façade historiques ;
 - ✅ ajouter des tests ciblés avant chaque extraction ;
-- poursuivre ensuite l'extraction des validateurs de `settings_dialog.py`.
+- ✅ extraire les validateurs et la normalisation de `settings_dialog.py` dans
+  `settings_config.py`, avec tests unitaires dédiés.
 
 ### Priorité 2 — Formaliser les contrats
 
@@ -293,10 +321,10 @@ affichage interactif.
 - conserver la validation native Windows comme étape manuelle de release.
 
 Le contrôle de taille est désormais exécuté dans la CI avec un seuil par défaut
-de 500 lignes. Les orchestrateurs UI déjà identifiés disposent d'une limite
+de 500 lignes. Les orchestrateurs UI encore identifiés disposent d'une limite
 transitoire explicitement listée dans `scripts/check_module_sizes.py`; la limite
-de `document_dialog.py` a été réduite à 1 800 lignes et le module est désormais
-bien en dessous de cette limite après les extractions conversationnelles. Chaque
+de `tool_call_widget.py` a été supprimée : ses 350 lignes respectent désormais
+le seuil général. Chaque
 extraction doit réduire cette allowlist plutôt que l'étendre.
 
 ## Conclusion

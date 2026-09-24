@@ -5,7 +5,16 @@ from pathlib import Path
 
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+from qfluentwidgets import SmoothScrollArea
 
 import src.ui.design_tokens as t
 from src.config.schema import LOGGER
@@ -43,7 +52,7 @@ class DocumentAttachmentPreview:
         area_layout = QVBoxLayout(self.document_area)
         area_layout.setContentsMargins(0, 0, 0, 0)
         area_layout.setSpacing(0)
-        self.image_scroll = QScrollArea(self.document_area)
+        self.image_scroll = SmoothScrollArea(self.document_area)
         self.image_scroll.setWidgetResizable(False)
         self.image_scroll.setFrameShape(QFrame.NoFrame)
         self.image_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -115,7 +124,7 @@ class DocumentAttachmentPreview:
                             source.loadFromData(pix.tobytes("png"))
                         finally:
                             doc.close()
-                    except Exception:
+                    except Exception:  # noqa: BLE001
                         LOGGER.exception("Impossible de générer la vignette PDF pour %s", path)
                 if source.isNull() and self._fallback_pixmap:
                     source = self._fallback_pixmap(preview_w, pdf_preview_h - 6)

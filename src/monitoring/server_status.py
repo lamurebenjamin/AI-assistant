@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
 """Thread de surveillance de l'état HTTP et du modèle actif de llama-server."""
 
 import re
+
 import requests
 from PySide6.QtCore import QThread, Signal
 
@@ -11,9 +11,10 @@ from src.config.schema import STATUS_TIMEOUT
 class ServerStatusThread(QThread):
     status_checked = Signal(bool, str, str)
 
-    def __init__(self, api_url: str, parent=None):
+    def __init__(self, api_url: str, parent=None, auth_token: str | None = None):
         super().__init__(parent)
         self.api_url = api_url.strip()
+        self.auth_token = (auth_token or "").strip() or None
 
     def run(self):
         try:
@@ -24,7 +25,8 @@ class ServerStatusThread(QThread):
 
             base_url = match.group(1)
             health_url = base_url + "/health"
-            response = requests.get(health_url, timeout=STATUS_TIMEOUT)
+            headers = self._request_headers()
+            response = requests.get(health_url, timeout=STATUS_TIMEOUT, headers=headers)
 
             if response.status_code == 200:
                 detail = "Serveur accessible"
@@ -37,7 +39,9 @@ class ServerStatusThread(QThread):
                 model_name = "Modèle inconnu"
                 try:
                     models_response = requests.get(
-                        base_url + "/v1/models", timeout=STATUS_TIMEOUT
+                        base_url + "/v1/models",
+                        timeout=STATUS_TIMEOUT,
+                        headers=headers,
                     )
                     if models_response.status_code == 200:
                         models_data = models_response.json()
@@ -68,3 +72,9 @@ class ServerStatusThread(QThread):
             self.status_checked.emit(False, "Serveur inaccessible", "")
         except requests.exceptions.RequestException as error:
             self.status_checked.emit(False, f"Erreur réseau : {error}", "")
+
+    def _request_headers(self) -> dict[str, str]:
+        """Construit les en-têtes d'authentification du serveur local."""
+        if self.auth_token:
+            return {"Authorization": f"Bearer {self.auth_token}"}
+        return {}

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Thread de collecte globale des ressources (RAM processus, GPU, modèle) pour le dialogue d'information."""
 
 import ctypes
@@ -6,7 +5,6 @@ import os
 import re
 import subprocess
 import sys
-from typing import Set
 
 import requests
 from PySide6.QtCore import QThread, Signal
@@ -19,9 +17,12 @@ class RuntimeInfoThread(QThread):
 
     info_ready = Signal(str)
 
-    def __init__(self, api_url: str, process_ids: Set[int], parent=None):
+    def __init__(
+        self, api_url: str, process_ids: set[int], parent=None, auth_token: str | None = None
+    ):
         super().__init__(parent)
         self.api_url = api_url.strip()
+        self.auth_token = (auth_token or "").strip() or None
         self.process_ids = {int(pid) for pid in process_ids if pid}
 
     @staticmethod
@@ -80,7 +81,9 @@ class RuntimeInfoThread(QThread):
             return "Indisponible"
         try:
             response = requests.get(
-                match.group(1) + "/v1/models", timeout=STATUS_TIMEOUT
+                match.group(1) + "/v1/models",
+                timeout=STATUS_TIMEOUT,
+                headers=self._request_headers(),
             )
             response.raise_for_status()
             payload = response.json()
@@ -94,6 +97,12 @@ class RuntimeInfoThread(QThread):
         except (requests.exceptions.RequestException, ValueError, TypeError, KeyError):
             pass
         return "Indisponible"
+
+    def _request_headers(self) -> dict[str, str]:
+        """Construit les en-têtes d'authentification du serveur local."""
+        if self.auth_token:
+            return {"Authorization": f"Bearer {self.auth_token}"}
+        return {}
 
     @staticmethod
     def _run_nvidia_smi(arguments):

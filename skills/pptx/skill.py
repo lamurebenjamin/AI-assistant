@@ -1,13 +1,44 @@
 from __future__ import annotations
 
-from .generator import create_pptx
+from typing import Any
+
+from core.mcp_compat import FastMCP
+
+from .generator import create_pptx as _generate_pptx
+
+mcp = FastMCP("pptx")
+
+
+@mcp.tool(
+    name="create_pptx",
+    description=(
+        "Crée une présentation Microsoft PowerPoint au format .pptx à partir d'un "
+        "titre, d'un sous-titre et d'une liste de diapositives."
+    ),
+)
+def create_pptx(
+    filename: str,
+    title: str,
+    subtitle: str,
+    slides: list[dict[str, Any]],
+    template_name: str | None = None,
+) -> str:
+    """Crée un PPTX dans output/ et retourne son chemin absolu."""
+    return _generate_pptx(
+        filename=filename,
+        title=title,
+        subtitle=subtitle,
+        slides=slides,
+        template_name=template_name,
+    )
 
 
 class PptxSkill:
-    """Skill de création de présentations Microsoft PowerPoint."""
+    """Skill de création de présentations Microsoft PowerPoint basé sur FastMCP."""
 
     name = "pptx"
     icon = "icon.svg"
+    mcp = mcp
 
     def get_tools(self):
         return [
