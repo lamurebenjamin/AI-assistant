@@ -12,9 +12,12 @@ from pathlib import Path
 from PySide6.QtGui import QPixmap
 
 try:
-    import fitz
+    import pymupdf as fitz
 except ImportError:
-    fitz = None
+    try:
+        import fitz
+    except ImportError:
+        fitz = None
 
 import src.ui.design_tokens as t
 from src.config.schema import LOGGER
