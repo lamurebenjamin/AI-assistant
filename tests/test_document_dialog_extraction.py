@@ -69,5 +69,16 @@ class DocumentDialogExtractionTests(unittest.TestCase):
         self.assertEqual(clean(None, "Texte\nSources:\n[1]"), "Texte")
         self.assertEqual(clean(None, ""), "")
 
+    def test_navigate_to_turn_facade_exists_and_delegates(self):
+        self.assertIn("_navigate_to_turn", self.methods)
+        method = self.methods["_navigate_to_turn"]
+        self.assertEqual([a.arg for a in method.args.args], ["self", "turn_index"])
+        self.assertIsInstance(method.body[0], ast.Return)
+        call = method.body[0].value
+        self.assertEqual(call.func.value.attr, "conversation_controller")
+        self.assertEqual(call.func.attr, "navigate_to_turn")
+        self.assertEqual([a.id for a in call.args], ["turn_index"])
+
+
 if __name__ == "__main__":
     unittest.main()

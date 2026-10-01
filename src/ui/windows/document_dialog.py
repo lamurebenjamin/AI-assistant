@@ -61,6 +61,8 @@ class DocumentDialog(QDialog):
         self.expanded_height = self.MIN_HEIGHT
         self.collapse_animation = None
         self.turns = []
+        self._turn_rows = []
+        self._turn_navigation_buttons = []
         self.current_turn_index = -1
         self._prompt_history_index = None
         self._prompt_history_draft = ""
@@ -184,6 +186,9 @@ class DocumentDialog(QDialog):
 
     def _clear_turn_navigation(self):
         return self.conversation_renderer._clear_turn_navigation()
+
+    def _navigate_to_turn(self, turn_index: int):
+        return self.conversation_controller.navigate_to_turn(turn_index)
 
     def _render_conversation(self):
         return self.conversation_controller.render()
