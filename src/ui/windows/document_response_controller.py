@@ -7,6 +7,9 @@ import time
 
 from PySide6.QtCore import QTimer
 
+from src.ui.widgets.ftnc_card_data import load_ftnc_cards
+from src.ui.widgets.ftnc_card_parser import identify_ftnc_output, normalize_ftnc_text
+
 
 class DocumentResponseController:
     """Owns response streaming state while preserving the dialog facade."""
@@ -89,6 +92,8 @@ class DocumentResponseController:
         if dialog.current_turn_index < 0:
             return
         turn = dialog.turns[dialog.current_turn_index]
+        if "pnr_result" in turn or "ftnc_result" in turn:
+            return  # Le résultat brut PNR est déjà rendu par le widget.
         if not turn.get("response_start_time"):
             turn["response_start_time"] = time.time()
         turn["answer"] += text
@@ -124,6 +129,9 @@ class DocumentResponseController:
         if dialog.current_turn_index < 0:
             return
         turn = dialog.turns[dialog.current_turn_index]
+        if "pnr_result" in turn or "ftnc_result" in turn:
+            dialog._render_conversation()
+            return
         # Le raisonnement est déjà rendu dans son widget dédié par
         # append_thinking(). Ne reconstruis pas toute la conversation pendant
         # son streaming : cela détruit/recrée les widgets et provoque un
@@ -205,10 +213,10 @@ class DocumentResponseController:
         turn = dialog.turns[dialog.current_turn_index]
         tools = turn.setdefault("tools", [])
         tool_icon = None
-        tool_skill = "ftnc"
+        tool_skill = ""
         try:
             tool_info = dialog.skill_manager.get_tool(name)
-            tool_skill = tool_info.get("skill", "ftnc")
+            tool_skill = tool_info.get("skill", "")
             tool_icon = dialog.skill_manager.get_skill_icon(tool_skill)
         except (KeyError, AttributeError):
             tool_icon = None
@@ -246,6 +254,28 @@ class DocumentResponseController:
             timeline[-1]["tools"].append(tool_entry)
         elif phase == "résultat":
             turn["thinking_status"] = f"Traitement du résultat de « {name} »…"
+            raw = normalize_ftnc_text(detail)
+            tool_name = identify_ftnc_output(raw)
+            if tool_name and str(tool_skill).casefold() != "ftnc_local" and (
+                str(tool_skill).casefold() == "ftnc" or
+                str(turn.get("skill_tag") or "").casefold() == "ftnc" or
+                str(name).casefold() in ("liste", "details", "ftnc_liste", "ftnc_details")
+            ):
+                turn["ftnc_result"] = raw
+                turn["ftnc_tool"] = tool_name
+                load_ftnc_cards(turn, raw, tool_name)
+                turn["loading"] = False
+                dialog.streaming_response_active = False
+                turn.setdefault("timeline", []).append({
+                    "type": "ftnc_visual", "text": raw, "tool_name": tool_name,
+                })
+            if name == "rechercher_reference_pnr":
+                turn["pnr_result"] = str(detail or "")
+                turn["loading"] = False
+                dialog.streaming_response_active = False
+                turn.setdefault("timeline", []).append({
+                    "type": "pnr_visual", "text": turn["pnr_result"]
+                })
             for t in reversed(tools):
                 if t.get("name") == name or t.get("status") == "running":
                     t["status"] = "done"
@@ -307,6 +337,36 @@ class DocumentResponseController:
             dialog.turns[dialog.current_turn_index]["loading"] = False
             dialog.turns[dialog.current_turn_index]["thinking_status"] = ""
             turn = dialog.turns[dialog.current_turn_index]
+            if not any(str(t.get("skill_name", "")).casefold() == "ftnc_local"
+                       for t in turn.get("tools", [])):
+                raw = normalize_ftnc_text(turn.get("ftnc_result") or turn.get("answer"))
+                if not identify_ftnc_output(raw):
+                    for entry in reversed(turn.get("tools", [])):
+                        candidate = normalize_ftnc_text(entry.get("result"))
+                        if identify_ftnc_output(candidate):
+                            raw = candidate
+                            break
+                tool_name = identify_ftnc_output(raw)
+                if tool_name:
+                    turn["ftnc_result"] = raw
+                    turn["ftnc_tool"] = tool_name
+                    load_ftnc_cards(turn, raw, tool_name)
+                    turn["answer"] = ""
+                    timeline = turn.setdefault("timeline", [])
+                    timeline[:] = [e for e in timeline if e.get("type") not in
+                                   ("response", "ftnc_visual")]
+                    timeline.append({"type": "ftnc_visual", "text": raw,
+                                     "tool_name": tool_name})
+                elif not turn.get("answer") and not turn.get("ftnc_result") and any(
+                    str(t.get("skill_name", "")).casefold() == "ftnc"
+                    and str(t.get("name", "")).casefold() in
+                    ("liste", "details", "ftnc_liste", "ftnc_details")
+                    for t in turn.get("tools", [])
+                ):
+                    message = "Aucun résultat reçu de la skill FTNC. Vérifiez l'exécution de l'outil."
+                    turn["answer"] = message
+                    turn.setdefault("timeline", []).append(
+                        {"type": "response", "text": message})
             if turn.get("thinking_start_time") and turn.get("thinking_duration") is None:
                 turn["thinking_duration"] = max(
                     0, time.time() - turn["thinking_start_time"]
@@ -340,4 +400,3 @@ class DocumentResponseController:
         dialog.stop_generation_button.setEnabled(True)
         dialog._update_send_visibility()
         dialog._render_conversation()
-

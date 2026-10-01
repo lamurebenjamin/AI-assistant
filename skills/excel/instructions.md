@@ -42,3 +42,10 @@ Le classeur Excel est créé automatiquement dans le dossier `output/` du projet
 ```bash
 pip install openpyxl
 ```
+
+## Validation
+
+Vérifier que le chemin retourné pointe vers un fichier `.xlsx` présent dans
+`output/` et que chaque ligne possède autant de valeurs que `headers`. Pour
+une modification du skill, exécuter le test ciblé puis la suite décrite dans
+[`skills/README.md`](../README.md).

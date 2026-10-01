@@ -20,3 +20,10 @@ Le fichier est créé automatiquement dans le dossier `output/` du projet.
 - Ne jamais prétendre qu'un fichier a été créé sans appeler l'outil.
 - Ne pas fournir de chemin arbitraire : le générateur contrôle le dossier de sortie.
 - Après l'exécution, utiliser le résultat du tool pour confirmer le chemin du fichier.
+
+## Validation
+
+Le fichier doit être créé sous `output/` par le générateur. Vérifier le chemin
+retourné et l'existence du fichier avant de confirmer la réussite. Pour une
+modification du skill, exécuter le test ciblé puis la suite décrite dans
+[`skills/README.md`](../README.md).

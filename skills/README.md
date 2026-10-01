@@ -1,6 +1,14 @@
-# Guide de Création de Skills MCP pour l'Assistant IA
+# Guide de création et de validation des skills MCP
 
 Ce document est le **guide de référence destiné aux IA et développeurs** pour concevoir, implémenter et tester de nouveaux **skills** basés sur le protocole standard **Model Context Protocol (MCP)** avec `FastMCP`.
+
+> **Source de vérité** : ce guide décrit les règles communes. Les fichiers
+> `skills/*/instructions.md` décrivent ensuite le comportement métier propre à
+> chaque skill ; en cas de divergence, le code testé et la configuration
+> effective du dépôt priment, puis la documentation doit être corrigée.
+
+La convention générale de structure et de nommage est documentée dans
+[`NAMING_CONVENTION.md`](../docs/development/NAMING_CONVENTION.md).
 
 ---
 
@@ -270,3 +278,16 @@ Exécutez toujours ces commandes dans le terminal pour valider l'intégration :
 # 3. Tester l'exposition MCP globale
 .\.venv\Scripts\python.exe scripts/run_mcp_server.py --help
 ```
+
+### Dépannage
+
+- Si l'import échoue, vérifier que la commande utilise
+  `.\.venv\Scripts\python.exe` et que les dépendances du profil concerné sont
+  installées.
+- Si le skill n'est pas découvert, vérifier le nom du dossier, la présence de
+  `skill.py`, la classe wrapper et l'absence d'exception à l'import.
+- Si un fichier de sortie est absent, vérifier le retour de l'outil et le
+  dossier `output/` ; ne jamais annoncer une création qui n'a pas été
+  confirmée par le résultat de l'outil.
+- Pour un problème MCP, lancer d'abord le contrôle d'import, puis
+  `scripts/run_mcp_server.py --help`, avant de tester le client externe.

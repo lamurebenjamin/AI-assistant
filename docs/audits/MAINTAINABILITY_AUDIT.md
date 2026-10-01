@@ -15,17 +15,17 @@ composants partagés et tests UI constituent de bonnes bases.
 
 Les coûts de maintenance restent concentrés dans :
 
-- [`document_dialog.py`](src/ui/windows/document_dialog.py) : 1 125 lignes ;
-- [`document_conversation_renderer.py`](src/ui/windows/document_conversation_renderer.py) : 525 lignes ;
-- [`document_source_renderer.py`](src/ui/windows/document_source_renderer.py) : 82 lignes ;
-- [`assistant_window.py`](src/ui/windows/assistant_window.py) : 1 190 lignes ;
-- [`assistant_response_renderer.py`](src/ui/windows/assistant_response_renderer.py) : 91 lignes ;
-- [`settings_dialog.py`](src/ui/windows/settings_dialog.py) : 736 lignes ;
-- [`stylesheet.py`](src/ui/stylesheet.py) : 680 lignes ;
-- [`tool_call_widget.py`](src/ui/widgets/tool_call_widget.py) : 350 lignes ;
-- [`tool_call_step.py`](src/ui/widgets/tool_call_step.py) : 284 lignes ;
-- [`stylesheet_document.py`](src/ui/stylesheet_document.py) : 200 lignes ;
-- [`timeline_header.py`](src/ui/widgets/timeline_header.py) : 214 lignes.
+- [`document_dialog.py`](../../src/ui/windows/document_dialog.py) : 1 125 lignes ;
+- [`document_conversation_renderer.py`](../../src/ui/windows/document_conversation_renderer.py) : 525 lignes ;
+- [`document_source_renderer.py`](../../src/ui/windows/document_source_renderer.py) : 82 lignes ;
+- [`assistant_window.py`](../../src/ui/windows/assistant_window.py) : 1 190 lignes ;
+- [`assistant_response_renderer.py`](../../src/ui/windows/assistant_response_renderer.py) : 91 lignes ;
+- [`settings_dialog.py`](../../src/ui/windows/settings_dialog.py) : 736 lignes ;
+- [`stylesheet.py`](../../src/ui/stylesheet.py) : 680 lignes ;
+- [`tool_call_widget.py`](../../src/ui/widgets/tool_call_widget.py) : 350 lignes ;
+- [`tool_call_step.py`](../../src/ui/widgets/tool_call_step.py) : 284 lignes ;
+- [`stylesheet_document.py`](../../src/ui/stylesheet_document.py) : 200 lignes ;
+- [`timeline_header.py`](../../src/ui/widgets/timeline_header.py) : 214 lignes.
 
 Ces modules mélangent encore orchestration, layout, rendu, événements et
 logique de contenu. Une modification visuelle ou un changement de flux métier
@@ -35,11 +35,11 @@ nécessite donc souvent de parcourir un fichier très large.
 
 | Contrôle | Résultat |
 | --- | --- |
-| Tests complets avec `.venv` | ✅ 108/108 |
+| Tests complets avec `.venv` | ✅ 109/109 |
 | Compilation avec `.venv` | ✅ |
-| Ruff avec `.venv` | ⚠️ violations de style existantes à traiter |
+| Ruff avec `.venv` | ✅ aucune violation signalée |
 | Compilation avec les deux interpréteurs | ✅ |
-| `git diff --check` sur le périmètre audité | ⚠️ avertissements de lignes vides finales dans des fichiers modifiés |
+| `git diff --check` sur le périmètre audité | ✅ aucune erreur |
 | Scan des couleurs hex/`rgba` dans l'UI | ✅ Centralisé dans les tokens |
 | Inventaire des modules | ✅ Découpage par domaine présent |
 | Inventaire de la taille des fichiers | ⚠️ Trois modules dépassent 700 lignes |
@@ -47,7 +47,7 @@ nécessite donc souvent de parcourir un fichier très large.
 | Rapport de couverture CI | ✅ `coverage report --show-missing` dans le workflow Windows |
 
 La suite `.venv\Scripts\python.exe -m unittest discover -s tests -v` a exécuté
-108 tests : 108 réussites, 0 échec et 0 test ignoré. Les tests de contraste
+109 tests : 109 réussites, 0 échec et 0 test ignoré. Les tests de contraste
 sémantique sont couverts par `test_ui_design_system`.
 Ruff a été exécuté avec l'environnement `.venv` et ne signale plus de
 violation. Les suppressions locales restantes documentent des captures
@@ -78,20 +78,20 @@ dans une passe séparée pour conserver des commits ciblés.
 ### Architecture par responsabilité
 
 Les domaines principaux sont séparés et les fenêtres UI ne portent plus seules
-toute la logique du projet. [`SkillManager`](core/skill_manager.py) expose une
+toute la logique du projet. [`SkillManager`](../../core/skill_manager.py) expose une
 API claire de découverte, description et exécution. Le chargement de
-configuration est également isolé dans [`manager.py`](src/config/manager.py).
+configuration est également isolé dans [`manager.py`](../../src/config/manager.py).
 
 ### Design system exploitable
 
 Les règles de mise à jour visuelle sont documentées dans
-[`UI_DESIGN_RULES.md`](UI_DESIGN_RULES.md), les exceptions dans
-[`UI_STYLE_EXCEPTIONS.md`](UI_STYLE_EXCEPTIONS.md), et les primitives QSS dans
-[`stylesheet.py`](src/ui/stylesheet.py).
+[`UI_DESIGN_RULES.md`](../ui/UI_DESIGN_RULES.md), les exceptions dans
+[`UI_STYLE_EXCEPTIONS.md`](../ui/UI_STYLE_EXCEPTIONS.md), et les primitives QSS dans
+[`stylesheet.py`](../../src/ui/stylesheet.py).
 
 ### Validation reproductible
 
-La suite `.venv` passe actuellement 108 tests sur 108. Les contrôles
+La suite `.venv` passe actuellement 109 tests sur 109. Les contrôles
 statiques empêchent déjà plusieurs régressions : couleurs hors tokens,
 `rgba(...)` dispersés, dimensions fixes littérales dans les widgets partagés et
 helpers QSS non couverts.
@@ -122,44 +122,44 @@ Chaque extraction doit conserver l'API publique de la fenêtre et ajouter des
 tests ciblés avant suppression de l'ancien code.
 
 **Avancement :** la responsabilité attachment preview/page range a été extraite
-dans [`document_attachment_preview.py`](src/ui/widgets/document_attachment_preview.py)
+dans [`document_attachment_preview.py`](../../src/ui/widgets/document_attachment_preview.py)
 et la construction des onglets de configuration dans
-[`settings_tabs.py`](src/ui/windows/settings_tabs.py).
+[`settings_tabs.py`](../../src/ui/windows/settings_tabs.py).
 `DocumentDialog` conserve ses méthodes et attributs publics par composition et
 délégation, tandis que `SettingsDialog` conserve les contrôles publics
 construits par le builder. La conversation/navigation des sources est maintenant
-déléguée à [`conversation_controller.py`](src/ui/windows/conversation_controller.py)
+déléguée à [`conversation_controller.py`](../../src/ui/windows/conversation_controller.py)
 et l'orchestration audio/TTS/tray/statut à
-[`assistant_orchestration.py`](src/ui/controllers/assistant_orchestration.py).
+[`assistant_orchestration.py`](../../src/ui/controllers/assistant_orchestration.py).
 Les contrôleurs conservent les façades publiques des fenêtres.
 Les gros composants transverses ont également été découpés : les règles QSS
 documentaires sont dans
-[`stylesheet_document.py`](src/ui/stylesheet_document.py), tandis que les
+[`stylesheet_document.py`](../../src/ui/stylesheet_document.py), tandis que les
 primitives d'en-tête de timeline sont dans
-[`timeline_header.py`](src/ui/widgets/timeline_header.py). Les imports publics
+[`timeline_header.py`](../../src/ui/widgets/timeline_header.py). Les imports publics
 historiques restent réexportés. Le rendu d'une étape d'outil est maintenant
-isolé dans [`tool_call_step.py`](src/ui/widgets/tool_call_step.py), ce qui
+isolé dans [`tool_call_step.py`](../../src/ui/widgets/tool_call_step.py), ce qui
 laisse au widget de groupe uniquement l'orchestration de la timeline.
 Le cycle de réponse (streaming, timeline d'outils, finalisation et erreurs) est
 également délégué à
-[`document_response_controller.py`](src/ui/windows/document_response_controller.py),
+[`document_response_controller.py`](../../src/ui/windows/document_response_controller.py),
 avec deux tests ciblés couvrant la création du tour et les fragments SSE.
 Le rendu conversationnel, la gestion du viewport et les captures de sources
 sont maintenant délégués à
-[`document_conversation_renderer.py`](src/ui/windows/document_conversation_renderer.py)
-et [`document_source_renderer.py`](src/ui/windows/document_source_renderer.py).
+[`document_conversation_renderer.py`](../../src/ui/windows/document_conversation_renderer.py)
+et [`document_source_renderer.py`](../../src/ui/windows/document_source_renderer.py).
 La fenêtre conserve ses façades historiques pour les appels internes et
 externes.
 L'orchestration du compositeur (envoi, historique et microphone) est maintenant
 déléguée à
-[`document_composer_controller.py`](src/ui/windows/document_composer_controller.py),
+[`document_composer_controller.py`](../../src/ui/windows/document_composer_controller.py),
 avec deux tests ciblés sur l'envoi et la navigation de l'historique.
 Le rendu HTML de réponse, l'animation d'attente et le flush du streaming de
 `AssistantWindow` sont maintenant délégués à
-[`assistant_response_renderer.py`](src/ui/windows/assistant_response_renderer.py),
+[`assistant_response_renderer.py`](../../src/ui/windows/assistant_response_renderer.py),
 avec deux tests ciblés. Les raccourcis restent exposés par la façade et leur
 orchestration audio/tray est déjà centralisée dans
-[`assistant_orchestration.py`](src/ui/controllers/assistant_orchestration.py).
+[`assistant_orchestration.py`](../../src/ui/controllers/assistant_orchestration.py).
 
 ### ✅ Résolu — Couverture de tests répartie
 
@@ -183,7 +183,7 @@ Les suites indépendantes suivantes sont maintenant présentes :
 - `tests/test_thread_lifecycle.py`.
 
 Les tests restent sans matériel ni serveur réel, avec répertoires temporaires,
-fixtures et adapters simulés. Les 108 tests passent dans `.venv`, notamment les
+fixtures et adapters simulés. les 109 tests passent dans `.venv`, notamment les
 tests d'authentification locale de `llama-server` (`tests/test_local_auth.py`).
 Les messages d'erreur audio, TTS et skill invalide affichés pendant la suite
 correspondent à des scénarios négatifs vérifiés par les tests et ne sont pas des
@@ -195,10 +195,10 @@ surfaces UI natives et les dépendances matérielles ne sont pas isolées.
 ### ✅ Résolu — Dépendances séparées par usage
 
 Les dépendances sont maintenant séparées par profil. Le socle commun est dans
-[`requirements.txt`](requirements.txt), l'interface et l'audio dans
-[`requirements-ui.txt`](requirements-ui.txt), les skills dans
-[`requirements-skills.txt`](requirements-skills.txt), et les outils de
-validation dans [`requirements-dev.txt`](requirements-dev.txt).
+[`requirements.txt`](../../requirements.txt), l'interface et l'audio dans
+[`requirements-ui.txt`](../../requirements-ui.txt), les skills dans
+[`requirements-skills.txt`](../../requirements-skills.txt), et les outils de
+validation dans [`requirements-dev.txt`](../../requirements-dev.txt).
 
 Les profils suivants sont en place :
 
@@ -208,7 +208,7 @@ Les profils suivants sont en place :
 
 ### ✅ Résolu — Documentation d'architecture
 
-Le [`README.md`](README.md) décrit désormais l'architecture par responsabilités
+Le [`README.md`](../../README.md) décrit désormais l'architecture par responsabilités
 sans annoncer une taille moyenne irréaliste. L'arborescence inclut les tokens,
 les helpers QSS, les widgets partagés et les builders récemment extraits ; les
 rapports spécialisés sont liés depuis la section UI.
@@ -227,7 +227,7 @@ threads, le client LLM et les fenêtres qui manipulent des dictionnaires métier
 **Mise en œuvre :**
 
 - les structures principales de configuration sont décrites par des
-  `TypedDict` dans [`schema.py`](src/config/schema.py) ;
+  `TypedDict` dans [`schema.py`](../../src/config/schema.py) ;
 - les outils de skills disposent d'un contrat `ToolDefinition` et l'exception
   métier `SkillError` est documentée ;
 - les signaux, états terminaux, opérations d'arrêt et erreurs attendues sont
@@ -241,19 +241,19 @@ sont annotés avec `Dict[str, Any]` plutôt que de masquer les extensions
 possibles par des casts.
 La validation et la normalisation des valeurs éditées par `SettingsDialog` sont
 désormais isolées dans
-[`settings_config.py`](src/ui/windows/settings_config.py), avec des tests
+[`settings_config.py`](../../src/ui/windows/settings_config.py), avec des tests
 unitaires indépendants de Qt. Les onglets Apparence et Ctrl+9 sont également
 construits par les classes autonomes `AppearanceTab` et `Ctrl9Tab` dans
-[`settings_tabs.py`](src/ui/windows/settings_tabs.py), avec conservation des
+[`settings_tabs.py`](../../src/ui/windows/settings_tabs.py), avec conservation des
 attributs publics historiques sur la façade.
 Les réponses complètes de la timeline d'outils sont également testées sans
 réseau avec des fixtures d'intégration Qt dans
-[`test_tool_timeline_integration.py`](tests/test_tool_timeline_integration.py).
+[`test_tool_timeline_integration.py`](../../tests/test_tool_timeline_integration.py).
 
 ### ✅ Résolu — Contrôles qualité automatisés
 
 Un workflow Windows versionné est maintenant présent dans
-[`.github/workflows/quality.yml`](.github/workflows/quality.yml). Il crée
+[`.github/workflows/quality.yml`](../../.github/workflows/quality.yml). Il crée
 `.venv`, installe `requirements-dev.txt`, puis exécute automatiquement :
 
 ```powershell
@@ -315,7 +315,7 @@ affichage interactif.
 ### Priorité 3 — Automatiser la qualité
 
 - ✅ CI minimale Windows ajoutée dans
-  [`.github/workflows/quality.yml`](.github/workflows/quality.yml) ;
+  [`.github/workflows/quality.yml`](../../.github/workflows/quality.yml) ;
 - ✅ ajouter un contrôle automatique de taille des modules ;
 - ✅ publier les résultats de couverture dans la CI ;
 - conserver la validation native Windows comme étape manuelle de release.

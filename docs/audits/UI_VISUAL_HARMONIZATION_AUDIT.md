@@ -12,7 +12,7 @@ Windows restant manuelle.**
 Le design system est maintenant réellement utilisé : tokens paritaires
 clair/sombre, helpers QSS, composants partagés (`WindowChrome`, `ComposerBar`,
 `StatusLabel`, `SkillTag`, `HairlineSeparator`) et API `refresh_theme()`.
-La couverture de tests a fortement progressé : **108 tests passent** avec
+La couverture de tests a fortement progressé : **109 tests passent** avec
 l'interpréteur du projet (`.venv`).
 
 Les styles locaux restants sont documentés et limités au contenu dynamique, aux
@@ -24,38 +24,38 @@ réel.
 
 | Contrôle | Résultat | Commentaire |
 | --- | --- | --- |
-| `.venv\Scripts\python.exe -m unittest discover -s tests -v` | ✅ 108/108 | UI, configuration, skills, parsing LLM, serveur local, authentification locale, threads, contrats et contrôleurs UI. |
+| `.venv\Scripts\python.exe -m unittest discover -s tests -v` | ✅ 109/109 | UI, configuration, skills, parsing LLM, serveur local, authentification locale, threads, contrats et contrôleurs UI. |
 | `.venv\Scripts\python.exe -m compileall -q src core skills main.pyw tests` | ✅ | Aucun échec de compilation. |
 | `python -m compileall -q src core skills main.pyw tests` | ✅ | Aucun échec avec Python système. |
 | `git diff --check -- src/ui tests README.md requirements.txt UI_*.md` | ✅ | Le périmètre audité est propre. |
 | Parité des clés `THEME_DARK` / `THEME_LIGHT` | ✅ | Test automatisé. |
 | Littéraux hex hors `design_tokens.py` | ✅ | Test automatisé. |
-| `.venv\Scripts\python.exe -m ruff check .` | ⚠️ Échec | Violations de style Ruff ; aucun test fonctionnel en échec. |
+| `.venv\Scripts\python.exe -m ruff check .` | ✅ Réussi | Aucune violation Ruff signalée lors de la dernière passe. |
 
 ## Points positifs vérifiés
 
 ### Sources de vérité visuelle
 
 - Les couleurs sont centralisées dans
-  [`design_tokens.py`](src/ui/design_tokens.py).
+  [`design_tokens.py`](../../src/ui/design_tokens.py).
 - Les primitives QSS sont regroupées dans
-  [`stylesheet.py`](src/ui/stylesheet.py).
+  [`stylesheet.py`](../../src/ui/stylesheet.py).
 - Les icônes sont gérées par
-  [`icons.py`](src/ui/icons.py), avec fallbacks et variantes de thème.
+  [`icons.py`](../../src/ui/icons.py), avec fallbacks et variantes de thème.
 - Les composants partagés sont présents dans
-  [`src/ui/widgets/`](src/ui/widgets/).
+  [`src/ui/widgets/`](../../src/ui/widgets/).
 - Les règles sont documentées dans
-  [`UI_DESIGN_RULES.md`](UI_DESIGN_RULES.md).
+  [`UI_DESIGN_RULES.md`](../ui/UI_DESIGN_RULES.md).
 
 ### Cohérence des écrans
 
 Les composants suivants fournissent une base cohérente :
 
-- [`WindowChrome`](src/ui/widgets/window_chrome.py) pour les headers ;
-- [`ComposerBar`](src/ui/widgets/composer_bar.py) pour la saisie ;
-- [`StatusLabel`](src/ui/widgets/status_label.py) pour les états ;
-- [`SkillTag`](src/ui/widgets/skill_tag.py) pour les skills ;
-- [`HairlineSeparator`](src/ui/widgets/hairline.py) pour les séparateurs.
+- [`WindowChrome`](../../src/ui/widgets/window_chrome.py) pour les headers ;
+- [`ComposerBar`](../../src/ui/widgets/composer_bar.py) pour la saisie ;
+- [`StatusLabel`](../../src/ui/widgets/status_label.py) pour les états ;
+- [`SkillTag`](../../src/ui/widgets/skill_tag.py) pour les skills ;
+- [`HairlineSeparator`](../../src/ui/widgets/hairline.py) pour les séparateurs.
 
 Les fenêtres persistantes exposent `refresh_theme()` et les tests vérifient le
 rafraîchissement des dialogues runtime, settings et documentaires.
@@ -77,24 +77,24 @@ Les tests couvrent maintenant :
 
 **Preuves**
 
-- [`tool_call_widget.py`](src/ui/widgets/tool_call_widget.py) utilise désormais
+- [`tool_call_widget.py`](../../src/ui/widgets/tool_call_widget.py) utilise désormais
   des helpers pour les lignes de timeline et les navigateurs de code.
-- [`slash_command_popup.py`](src/ui/widgets/slash_command_popup.py) utilise
+- [`slash_command_popup.py`](../../src/ui/widgets/slash_command_popup.py) utilise
   désormais un helper pour sa surface, ses états de sélection et sa scrollbar.
-- [`document_dialog.py`](src/ui/windows/document_dialog.py) utilise des helpers
+- [`document_dialog.py`](../../src/ui/windows/document_dialog.py) utilise des helpers
   pour la zone de pièces jointes, la réponse et la navigation.
-- [`settings_dialog.py`](src/ui/windows/settings_dialog.py) utilise un helper
+- [`settings_dialog.py`](../../src/ui/windows/settings_dialog.py) utilise un helper
   pour les accents typographiques récurrents.
 - Les styles internes répétés des commandes slash, des surfaces transparentes
   et de l'aperçu des pages documentaires sont maintenant fournis par des
-  helpers dédiés dans [`stylesheet.py`](src/ui/stylesheet.py).
+  helpers dédiés dans [`stylesheet.py`](../../src/ui/stylesheet.py).
 
 **Évaluation**
 
 Les styles locaux restants concernent uniquement le contenu dynamique, les
 animations et les compositions propres à une fenêtre. Les structures
 réutilisables et leurs états sont centralisés dans
-[`stylesheet.py`](src/ui/stylesheet.py).
+[`stylesheet.py`](../../src/ui/stylesheet.py).
 
 **Recommandation**
 
@@ -130,7 +130,7 @@ La commande complète et reproductible de l'audit reste :
 .\.venv\Scripts\python.exe -m compileall -q src core skills main.pyw tests
 ```
 
-`.venv\Scripts\python.exe` produit désormais le résultat complet de 108/108
+`.venv\Scripts\python.exe` produit désormais le résultat complet de 109/109
 tests et reste recommandé pour garantir un environnement reproductible.
 Les messages d'erreur audio, TTS et skill invalide apparaissant dans la sortie
 sont des scénarios négatifs attendus et validés ; ils ne font pas échouer la

@@ -18,12 +18,17 @@ Ne pas appeler cette skill pour une question sans rapport avec les FTNC. Dans le
 
 ## Sources de données
 
-Les chemins et noms de feuilles sont définis en dur dans `generator.py` :
+Les chemins sont configurés dans `config.json` sous `skills.ftnc` ou via les
+variables d'environnement prévues par le générateur. Les noms de feuilles
+attendus sont :
 
 - `FTNC.xlsx`, feuille `Données consolidées` ;
 - `Suivi des FTNC €uro.xlsx`, feuille `SUIVI`.
 
-Ne jamais demander à l'utilisateur un chemin de fichier, ne pas accepter de chemin Excel en argument et ne pas modifier les constantes de chemin depuis le LLM.
+Ne jamais demander à l'utilisateur un chemin de fichier, ne pas accepter de
+chemin Excel en argument et ne pas modifier la configuration depuis le LLM.
+En cas de configuration absente ou invalide, afficher l'erreur explicite du
+générateur.
 
 ## Outil de liste et de comparaison
 
@@ -55,7 +60,7 @@ Il réalise les traitements suivants :
 
 Après l'appel :
 
-- afficher le texte retourné sans le transformer en structure JSON ou en tableau inventé ;
+- dans la conversation Ctrl+9, afficher une carte par FTNC du suivi €uro filtré par le générateur, y compris celles déjà présentes dans le planner ; le planner ne fournit que le témoin visuel de présence ; dans les clients MCP externes, conserver la sortie texte ;
 - conserver l'ordre, les sections, les compteurs, les descriptions et les dates produits par le générateur ;
 - ne pas inventer de FTNC, de priorité ou de détail absent du résultat ;
 - ne pas annoncer uniquement les FTNC « en cours », car la partie planner inclut aussi les FTNC « non démarrées ».
@@ -78,7 +83,7 @@ La recherche :
 
 Après l'appel :
 
-- afficher le texte retourné par le générateur ;
+- dans la conversation Ctrl+9, afficher uniquement les correspondances issues du suivi €uro ; le planner ne fournit que le témoin visuel de présence ; dans les clients MCP externes, conserver la sortie texte ;
 - conserver l'indication de la source pour chaque correspondance ;
 - pour une ligne du planner, afficher la priorité ;
 - pour une ligne du suivi €uro, conserver le type, le pôle, la pièce, la référence pièce, la quantité, la date de début et la description ;
@@ -98,3 +103,7 @@ Après l'appel :
 - Conserver `PPM` uniquement lorsqu'il est utile d'expliquer le filtre technique ou dans le détail brut retourné par le générateur.
 - Utiliser le contenu exact retourné par le générateur comme source de vérité.
 - Ne pas annoncer de lien `ftnc://`, d'action `show_ftnc_detail`, d'objet `action.arguments` ni de sortie Markdown structurée : `generator.py` retourne uniquement du texte.
+- Le rendu natif utilise `ftnc_cartes_suivi()` de `generator.py` pour la référence, le programme, la quantité et les détails issus du suivi €uro. `skills/ftnc/planner.svg` est affiché sur une carte uniquement si sa référence est présente dans le planner. Chaque carte a une largeur maximale de 180 px ; la grille se réorganise selon la largeur de la conversation, sans défilement interne. Si la quantité du suivi est absente, afficher « Non renseigné ».
+- Si le format de sortie n'est pas reconnu, afficher le texte brut plutôt qu'une carte incorrecte.
+
+- Après les cartes, signaler les références présentes dans le planner (colonne B) mais absentes des lignes retenues par le filtre du suivi €uro. Ces références ne deviennent jamais des cartes ; afficher une erreur explicite si la comparaison est impossible.

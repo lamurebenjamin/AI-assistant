@@ -198,4 +198,3 @@ def qss_tool_code_browser(is_error: bool = False) -> str:
             padding: 4px 6px;
         }}
     """
-

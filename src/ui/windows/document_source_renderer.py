@@ -85,5 +85,3 @@ class DocumentSourceRenderer:
             except Exception: LOGGER.exception("Impossible de générer la capture de la source")  # noqa: BLE001
         if not cards: return ""
         return ''.join(cards)
-
-

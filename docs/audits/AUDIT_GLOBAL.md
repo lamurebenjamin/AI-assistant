@@ -1,6 +1,6 @@
 # Audit global du projet
 
-Date de la passe : **24/09/2026**  
+Date de la passe : **25/09/2026**
 Périmètre : maintenabilité Python, interface PySide6, design system, thèmes,
 accessibilité, tests, CI, documentation et validation Windows.
 
@@ -30,15 +30,14 @@ Les risques résiduels sont principalement :
 
 1. contrôleurs UI encore volumineux ;
 2. validation native Windows non observable en headless ;
-3. violations Ruff existantes ;
-4. vérification visuelle complète de l’accessibilité, des icônes, bordures et
+3. vérification visuelle complète de l’accessibilité, des icônes, bordures et
    états avancés.
 
 ## 2. Résultats vérifiés
 
 | Contrôle | Résultat | Interprétation |
 |---|---:|---|
-| `.\.venv\Scripts\python.exe -m unittest discover -s tests -v` | ✅ **108/108** | 108 réussites, 0 échec, 0 ignoré |
+| `.\.venv\Scripts\python.exe -m unittest discover -s tests -v` | ✅ **109/109** | 109 réussites, 0 échec, 0 ignoré |
 | `.\.venv\Scripts\python.exe -m compileall -q src core skills main.pyw tests` | ✅ | Compilation complète réussie |
 | Compilation avec Python système | ✅ | Aucun échec de syntaxe observé |
 | `git diff --check` sur le périmètre audité | ✅ | Aucun problème bloquant sur les fichiers contrôlés |
@@ -58,16 +57,16 @@ scénarios négatifs attendus et validés ; ils ne constituent pas des régressi
 - Les responsabilités métier et UI sont réparties par domaine.
 - `SettingsDialog` conserve son API publique ; la validation et la
   normalisation sont isolées dans
-  [`settings_config.py`](src/ui/windows/settings_config.py).
+  [`settings_config.py`](../../src/ui/windows/settings_config.py).
 - Les onglets Apparence et Ctrl+9 sont maintenant des classes autonomes
-  [`AppearanceTab` et `Ctrl9Tab`](src/ui/windows/settings_tabs.py), tandis que
+  [`AppearanceTab` et `Ctrl9Tab`](../../src/ui/windows/settings_tabs.py), tandis que
   `SettingsDialog` conserve ses attributs de contrôles historiques.
 - La timeline d'outils est couverte par des tests d'intégration Qt avec des
   réponses complètes mockées (raisonnement, succès, erreur, résultats JSON et
   réponse finale), sans appel réseau, dans
-  [`test_tool_timeline_integration.py`](tests/test_tool_timeline_integration.py).
+  [`test_tool_timeline_integration.py`](../../tests/test_tool_timeline_integration.py).
 - Le traitement des fichiers produits par les tools est isolé dans
-  [`assistant_file_links.py`](src/ui/windows/assistant_file_links.py), avec
+  [`assistant_file_links.py`](../../src/ui/windows/assistant_file_links.py), avec
   façades historiques conservées.
 - Les extractions de document, conversation, sources, réponses, composer,
   audio/TTS, timeline et styles QSS disposent de tests ciblés.
@@ -79,12 +78,12 @@ scénarios négatifs attendus et validés ; ils ne constituent pas des régressi
 
 | Module | Taille approximative | Action |
 |---|---:|---|
-| [`document_dialog.py`](src/ui/windows/document_dialog.py) | 1 125 lignes | Extraire seulement les responsabilités encore isolables |
-| [`assistant_window.py`](src/ui/windows/assistant_window.py) | 1 190 lignes | Poursuivre l’extraction incrémentale |
-| [`settings_dialog.py`](src/ui/windows/settings_dialog.py) | 758 lignes | Conserver la façade ; extractions d'onglets réalisées |
-| [`stylesheet.py`](src/ui/stylesheet.py) | 680 lignes | Extraire uniquement les blocs réutilisables |
-| [`document_conversation_renderer.py`](src/ui/windows/document_conversation_renderer.py) | 525 lignes | Surveiller avant nouvelle extraction |
-| [`tool_call_step.py`](src/ui/widgets/tool_call_step.py) | 284 lignes | Pas d’extraction urgente |
+| [`document_dialog.py`](../../src/ui/windows/document_dialog.py) | 1 125 lignes | Extraire seulement les responsabilités encore isolables |
+| [`assistant_window.py`](../../src/ui/windows/assistant_window.py) | 1 190 lignes | Poursuivre l’extraction incrémentale |
+| [`settings_dialog.py`](../../src/ui/windows/settings_dialog.py) | 758 lignes | Conserver la façade ; extractions d'onglets réalisées |
+| [`stylesheet.py`](../../src/ui/stylesheet.py) | 680 lignes | Extraire uniquement les blocs réutilisables |
+| [`document_conversation_renderer.py`](../../src/ui/windows/document_conversation_renderer.py) | 525 lignes | Surveiller avant nouvelle extraction |
+| [`tool_call_step.py`](../../src/ui/widgets/tool_call_step.py) | 284 lignes | Pas d’extraction urgente |
 
 Chaque extraction future doit :
 
@@ -92,29 +91,29 @@ Chaque extraction future doit :
 2. ajouter les tests ciblés avant suppression de l’ancien code ;
 3. préserver les façades publiques et les imports historiques ;
 4. réduire l’allowlist de
-   [`check_module_sizes.py`](scripts/check_module_sizes.py), jamais l’élargir.
+   [`check_module_sizes.py`](../../scripts/check_module_sizes.py), jamais l’élargir.
 
 ## 4. Conformité UI et source unique de vérité
 
 ### Conforme
 
 - couleurs, dimensions et états de thème centralisés dans
-  [`design_tokens.py`](src/ui/design_tokens.py) ;
+  [`design_tokens.py`](../../src/ui/design_tokens.py) ;
 - icônes issues du registre de
-  [`icons.py`](src/ui/icons.py) ;
+  [`icons.py`](../../src/ui/icons.py) ;
 - primitives QSS regroupées dans
-  [`stylesheet.py`](src/ui/stylesheet.py) ;
+  [`stylesheet.py`](../../src/ui/stylesheet.py) ;
 - composants partagés pour headers, composer, statuts, skills et séparateurs ;
 - `refresh_theme()` disponible sur les fenêtres persistantes couvertes ;
 - tooltips, focus clavier, états hover/pressed/disabled et textes longs testés ;
 - exceptions de styles documentées dans
-  [`UI_STYLE_EXCEPTIONS.md`](UI_STYLE_EXCEPTIONS.md) ;
+  [`UI_STYLE_EXCEPTIONS.md`](../ui/UI_STYLE_EXCEPTIONS.md) ;
 - règles de conception détaillées dans
-  [`UI_DESIGN_RULES.md`](UI_DESIGN_RULES.md).
+  [`UI_DESIGN_RULES.md`](../ui/UI_DESIGN_RULES.md).
 
 ### Accessibilité automatisée
 
-Les tests de [`test_ui_design_system.py`](tests/test_ui_design_system.py)
+Les tests de [`test_ui_design_system.py`](../../tests/test_ui_design_system.py)
 calculent les ratios WCAG pour :
 
 - texte primaire, secondaire et liens sur le fond de page ;
@@ -151,7 +150,7 @@ La passe automatisée a été effectuée sous Windows 11 Professionnel, build
 - états `loading`, `success` et `error` sur toutes les surfaces.
 
 La procédure détaillée est conservée dans
-[`UI_WINDOWS_RELEASE_CHECKLIST.md`](UI_WINDOWS_RELEASE_CHECKLIST.md).
+[`UI_WINDOWS_RELEASE_CHECKLIST.md`](../release/UI_WINDOWS_RELEASE_CHECKLIST.md).
 
 ## 6. Qualité et dette restante
 
@@ -207,6 +206,6 @@ git diff --check
 - [`MAINTAINABILITY_AUDIT.md`](MAINTAINABILITY_AUDIT.md)
 - [`UI_CONFORMANCE_AUDIT.md`](UI_CONFORMANCE_AUDIT.md)
 - [`UI_VISUAL_HARMONIZATION_AUDIT.md`](UI_VISUAL_HARMONIZATION_AUDIT.md)
-- [`UI_WINDOWS_RELEASE_CHECKLIST.md`](UI_WINDOWS_RELEASE_CHECKLIST.md)
-- [`UI_DESIGN_RULES.md`](UI_DESIGN_RULES.md)
-- [`UI_STYLE_EXCEPTIONS.md`](UI_STYLE_EXCEPTIONS.md)
+- [`UI_WINDOWS_RELEASE_CHECKLIST.md`](../release/UI_WINDOWS_RELEASE_CHECKLIST.md)
+- [`UI_DESIGN_RULES.md`](../ui/UI_DESIGN_RULES.md)
+- [`UI_STYLE_EXCEPTIONS.md`](../ui/UI_STYLE_EXCEPTIONS.md)

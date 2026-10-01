@@ -292,7 +292,7 @@ Avant une PR UI :
 4. lancer la compilation Python, les tests UI ciblés et `git diff --check` ;
 5. décrire toute exception visuelle dans la PR, avec sa raison et son périmètre.
 6. exécuter la checklist Windows de
-   [`UI_WINDOWS_RELEASE_CHECKLIST.md`](UI_WINDOWS_RELEASE_CHECKLIST.md) pour
+   [`UI_WINDOWS_RELEASE_CHECKLIST.md`](../release/UI_WINDOWS_RELEASE_CHECKLIST.md) pour
    toute modification du thème, des fenêtres frameless, des icônes ou des
    raccourcis système.
 

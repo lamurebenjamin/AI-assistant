@@ -85,5 +85,3 @@ class AssistantResponseRenderer:
             host.resize(host.width(), host.expanded_height)
         scrollbar = host.scroll_area.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
-
-

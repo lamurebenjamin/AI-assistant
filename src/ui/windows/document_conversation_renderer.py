@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
 
 from src.ui.stylesheet import qss_shimmer_status_label, qss_transparent_surface
 from src.ui.widgets.chat_bubble import ChatBubble
+from src.ui.widgets.ftnc_cards_widget import FtncCardsWidget, add_ftnc_cards
+from src.ui.widgets.pnr_bom_widget import PnrBomWidget
 from src.ui.widgets.thinking_dots import ShimmerLabel
 from src.ui.widgets.tool_call_widget import (
     ThinkingGroupWidget,
@@ -207,7 +209,18 @@ class DocumentConversationRenderer:
                             if is_current_stream:
                                 dialog.current_thinking_widget = thinking_widget
                             assistant_layout.addWidget(thinking_widget, 0, Qt.AlignLeft)
+                        elif event_type == "ftnc_visual":
+                            add_ftnc_cards(assistant_layout, assistant_row, bubble_width,
+                                           dialog.FONT_SIZE_OFFSET, event.get("text", ""),
+                                           event.get("tool_name", ""), dialog._on_tool_widget_toggled, turn.get("ftnc_cards_data"), turn.get("ftnc_cards_error", ""), turn.get("ftnc_missing_planner"), turn.get("ftnc_missing_error", ""))
+                        elif event_type == "pnr_visual":
+                            bom_widget = PnrBomWidget(assistant_row)
+                            bom_widget.set_result(event.get("text", ""))
+                            bom_widget.setFixedWidth(bubble_width)
+                            assistant_layout.addWidget(bom_widget, 0, Qt.AlignLeft)
                         elif event_type == "response":
+                            if "pnr_result" in turn or "ftnc_result" in turn:
+                                continue
                             response_text = dialog._answer_without_sources(
                                 event.get("text", "")
                             )
@@ -335,10 +348,17 @@ class DocumentConversationRenderer:
                     tool_widget.setFixedWidth(bubble_width)
                     tool_widget.toggled.connect(dialog._on_tool_widget_toggled)
                     assistant_layout.addWidget(tool_widget, 0, Qt.AlignLeft)
-
                 if thinking_after_tools:
                     add_thinking_widget()
-
+                if "ftnc_result" in turn:
+                    add_ftnc_cards(assistant_layout, assistant_row, bubble_width,
+                                   dialog.FONT_SIZE_OFFSET, turn["ftnc_result"],
+                                   turn.get("ftnc_tool", ""), dialog._on_tool_widget_toggled, turn.get("ftnc_cards_data"), turn.get("ftnc_cards_error", ""), turn.get("ftnc_missing_planner"), turn.get("ftnc_missing_error", ""))
+                if "pnr_result" in turn:
+                    bom_widget = PnrBomWidget(assistant_row)
+                    bom_widget.set_result(turn["pnr_result"])
+                    bom_widget.setFixedWidth(bubble_width)
+                    assistant_layout.addWidget(bom_widget, 0, Qt.AlignLeft)
                 # B. Indicateur de génération bleu, visible pendant toute la
                 # préparation de la réponse, y compris pendant un appel outil.
                 if is_loading and not answer and not thinking:
@@ -401,6 +421,10 @@ class DocumentConversationRenderer:
         ):
             for widget in dialog.conversation_widget.findChildren(widget_type):
                 widget.setFixedWidth(bubble_width)
+        for widget in dialog.conversation_widget.findChildren(PnrBomWidget):
+            widget.setFixedWidth(bubble_width)
+        for widget in dialog.conversation_widget.findChildren(FtncCardsWidget):
+            widget.setFixedWidth(bubble_width)
         for bubble in dialog.conversation_widget.findChildren(ChatBubble):
             if bubble.role != "user":
                 bubble.setFixedWidth(bubble_width)

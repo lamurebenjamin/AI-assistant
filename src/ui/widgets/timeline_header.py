@@ -218,4 +218,3 @@ class CollapsibleHeader(QWidget):
     @property
     def is_hovered(self) -> bool:
         return self._hovered
-

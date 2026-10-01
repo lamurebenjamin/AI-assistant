@@ -61,3 +61,9 @@ pip install python-pptx
 ```
 
 Le nom du paquet a installer est `python-pptx`, mais l'import Python utilise `pptx`.
+
+## Validation
+
+Vérifier le chemin retourné et l'existence du fichier `.pptx` dans `output/`.
+Pour une modification du skill, exécuter le test ciblé puis la suite décrite
+dans [`skills/README.md`](../README.md).

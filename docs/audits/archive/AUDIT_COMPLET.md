@@ -41,8 +41,8 @@ Les validations suivantes ont été exécutées dans l’environnement du projet
 
 | Contrôle | Résultat | Observation |
 |---|---|---|
-| `python -m unittest discover tests` | ✅ 108/108 | Tous les tests passent |
-| `python -m ruff check .` | ✅ | Aucun problème de lint détecté |
+| `.\.venv\Scripts\python.exe -m unittest discover -s tests -v` | ✅ 109/109 | Tous les tests passent |
+| `.\.venv\Scripts\python.exe -m ruff check .` | ✅ | Aucun problème de lint détecté |
 | installation des dépendances via `requirements-dev.txt` | ✅ | Environnement fonctionnel |
 | compilation Python / import du code | ✅ | Aucun échec de syntaxe observé |
 | audit de structure / tailles de modules | ✅ | Architecture conforme au périmètre contrôlé |
@@ -50,8 +50,8 @@ Les validations suivantes ont été exécutées dans l’environnement du projet
 | contrôle icônes et QSS | ✅ | Source unique de vérité présente |
 
 Extrait de la validation :
-- suite exécutée : 108 tests,
-- résultat : 108 réussites, 0 échec,
+- suite exécutée : 109 tests,
+- résultat : 109 réussites, 0 échec,
 - lint : 0 violation signalée.
 
 ---

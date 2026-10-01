@@ -82,6 +82,7 @@ class LlamaThread(QThread):
                 self.tool_definitions = []
         self._stop_requested = False
         self._active_response = None
+        self._pnr_direct_result: str | None = None
 
     def stop(self):
         self._stop_requested = True
@@ -171,7 +172,12 @@ class LlamaThread(QThread):
             try:
                 result = self.skill_manager.execute_tool(name, arguments)
                 result_payload = {"success": True, "result": result}
-                result_display = json.dumps(result, ensure_ascii=False, indent=2, default=str)
+                if name == "rechercher_reference_pnr":
+                    # Conserver le texte brut : JSON échapperait les retours à la ligne.
+                    self._pnr_direct_result = str(result)
+                    result_display = self._pnr_direct_result
+                else:
+                    result_display = json.dumps(result, ensure_ascii=False, indent=2, default=str)
                 self.tool_event.emit("résultat", name, result_display)
             except Exception as error:  # noqa: BLE001
                 LOGGER.exception("Erreur d'exécution du tool '%s'", name)
@@ -294,6 +300,7 @@ class LlamaThread(QThread):
     _requires_tool_call = staticmethod(requires_tool_call)
 
     def _run_agent(self, messages: list) -> str:
+        self._pnr_direct_result = None
         must_use_tool = self._requires_tool_call(messages) or bool(self.forced_tool)
         tool_was_called = False
 
@@ -309,9 +316,12 @@ class LlamaThread(QThread):
                     LOGGER.exception("Erreur d'exécution directe du tool '%s'", name)
                     self.tool_event.emit("erreur", name, f"{type(error).__name__}: {error}")
                     raise
-                result_display = json.dumps(
-                    result, ensure_ascii=False, indent=2, default=str
-                )
+                if name == "rechercher_reference_pnr":
+                    result_display = str(result)
+                else:
+                    result_display = json.dumps(
+                        result, ensure_ascii=False, indent=2, default=str
+                    )
                 self.tool_event.emit("résultat", name, result_display)
                 return result_display
 
@@ -375,6 +385,10 @@ class LlamaThread(QThread):
             }
             messages.append(assistant_message)
             messages.extend(self._execute_tool_calls(tool_calls))
+            if self._pnr_direct_result is not None:
+                # Le signal d'outil alimente directement le composant visuel.
+                # Aucun tour LLM supplémentaire après un résultat PNR réussi.
+                return self._pnr_direct_result
 
         raise SkillError(
             f"Nombre maximal d'étapes d'outils atteint ({self.MAX_TOOL_ROUNDS})."

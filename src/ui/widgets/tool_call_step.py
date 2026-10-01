@@ -291,5 +291,3 @@ class ToolCallStepWidget(QFrame):
                 f"<span style='color:{verb_color}; font-size:{t.SIZE_SM}; font-weight:500;'>{verb_esc} </span>"
                 f"<span style='color:{target_color}; font-family:Consolas, \"Cascadia Code\", monospace; font-size:{t.SIZE_SM};'>{target_esc}</span>"
             )
-
-

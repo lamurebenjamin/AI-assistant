@@ -14,16 +14,16 @@ présents dans le dépôt et dans la CI Windows.
 | Thèmes clair/sombre | 🟢 Conforme | Les tokens sont paritaires et les fenêtres persistantes exposent `refresh_theme()`. |
 | États interactifs | 🟢 Couvert | Les états principaux, le focus du compositeur et les tooltips sont testés. |
 | Assets et icônes | 🟢 Conforme | Les skills déclarent leurs assets et disposent de fallbacks testés. |
-| Tests automatisés | 🟢 Bonne couverture | 108 tests couvrent UI, configuration, skills, parsing LLM, serveur local, authentification locale, threads, contrats et contrôleurs UI. |
+| Tests automatisés | 🟢 Bonne couverture | 109 tests couvrent UI, configuration, skills, parsing LLM, serveur local, authentification locale, threads, contrats et contrôleurs UI. |
 | Contrôles techniques | 🟢 Conforme | Compilation, tests de contraste et contrôle `git diff --check` réussissent sur le périmètre audité. |
 
 ## Contrôles exécutés
 
 | Contrôle | Résultat | Limite |
 | --- | --- | --- |
-| `.\.venv\Scripts\python.exe -m unittest discover -s tests -v` | ✅ 108 tests réussis | Couverture headless UI, configuration, skills, parsing LLM, serveur local, authentification locale, threads, contrats et contrôleurs UI. |
+| `.\.venv\Scripts\python.exe -m unittest discover -s tests -v` | ✅ 109 tests réussis | Couverture headless UI, configuration, skills, parsing LLM, serveur local, authentification locale, threads, contrats et contrôleurs UI. |
 | `.\.venv\Scripts\python.exe -m compileall -q src core skills main.pyw tests` | ✅ Réussi | Compilation Python complète. |
-| `.\.venv\Scripts\python.exe -m ruff check .` | ⚠️ Échec | Violations de style Ruff à traiter ; aucun test fonctionnel en échec. |
+| `.\.venv\Scripts\python.exe -m ruff check .` | ✅ Réussi | Aucune violation Ruff signalée lors de la dernière passe. |
 | `.venv\Scripts\python.exe -m compileall -q src core skills main.pyw tests` | ✅ Réussi | Ne détecte pas les incohérences de thème ou de QSS. |
 | `git diff --check -- src/ui tests README.md UI_DESIGN_RULES.md` | ✅ Réussi | Le périmètre UI audité est propre. |
 | Recherche de couleurs dans les surfaces migrées | ✅ Aucune occurrence dans les fichiers ciblés | Les registres d'icônes et certains styles globaux conservent des valeurs intentionnelles mais non testées. |
@@ -45,7 +45,7 @@ manuelle pour Acrylic, DPI, tray et multi-écrans.
 
 ### ✅ Résolu — Couverture de tests UI et métier
 
-Les suites de [`tests/`](tests/) contiennent désormais 108 tests headless
+Les suites de [`tests/`](../../tests/) contiennent désormais 109 tests headless
 couvrant les widgets partagés, les états interactifs, les tooltips, le focus
 clavier, les textes longs, le Markdown, les assets, la configuration, les
 skills, le parsing LLM, le serveur local, son authentification locale et le
@@ -59,12 +59,12 @@ constituent pas des régressions.
 
 **Preuves**
 
-- [`settings_dialog.py`](src/ui/windows/settings_dialog.py) utilise désormais
+- [`settings_dialog.py`](../../src/ui/windows/settings_dialog.py) utilise désormais
   `qss_settings_emphasis()` pour les accents typographiques récurrents.
-- [`document_dialog.py`](src/ui/windows/document_dialog.py) utilise des helpers
+- [`document_dialog.py`](../../src/ui/windows/document_dialog.py) utilise des helpers
   pour la réponse, la navigation et les pièces jointes.
-- [`tool_call_widget.py`](src/ui/widgets/tool_call_widget.py) et
-  [`slash_command_popup.py`](src/ui/widgets/slash_command_popup.py) utilisent
+- [`tool_call_widget.py`](../../src/ui/widgets/tool_call_widget.py) et
+  [`slash_command_popup.py`](../../src/ui/widgets/slash_command_popup.py) utilisent
   des helpers QSS pour leurs structures réutilisables.
 
 **Impact**
@@ -72,7 +72,7 @@ constituent pas des régressions.
 Les règles de visualisation communes sont maintenant regroupées. Les styles
 restants sont spécifiques au contenu dynamique, aux animations ou à une
 composition locale et restent documentés dans
-[`UI_STYLE_EXCEPTIONS.md`](UI_STYLE_EXCEPTIONS.md).
+[`UI_STYLE_EXCEPTIONS.md`](../ui/UI_STYLE_EXCEPTIONS.md).
 
 **Suivi**
 
@@ -83,9 +83,9 @@ dynamiquement uniquement lorsqu'ils sont indispensables au rendu Qt rich-text.
 ### ✅ Résolu — Styles locaux dans les fenêtres complexes
 
 Les styles locaux restants concernent principalement la composition spécifique
-de [`settings_dialog.py`](src/ui/windows/settings_dialog.py),
-[`document_dialog.py`](src/ui/windows/document_dialog.py) et
-[`runtime_info_dialog.py`](src/ui/windows/runtime_info_dialog.py). Ils utilisent
+de [`settings_dialog.py`](../../src/ui/windows/settings_dialog.py),
+[`document_dialog.py`](../../src/ui/windows/document_dialog.py) et
+[`runtime_info_dialog.py`](../../src/ui/windows/runtime_info_dialog.py). Ils utilisent
 désormais les tokens ; le risque restant est la duplication de structure QSS,
 pas une divergence de palette.
 
@@ -140,4 +140,4 @@ Le socle visuel est conforme sur le périmètre automatisé. Les contrôles
 couvrent les composants principaux, le changement de thème, les tokens, les
 états et les dimensions partagées. Le seul contrôle restant est la validation
 native Windows, sans bloquer les évolutions courantes si les règles de
-[`UI_DESIGN_RULES.md`](UI_DESIGN_RULES.md) sont respectées.
+[`UI_DESIGN_RULES.md`](../ui/UI_DESIGN_RULES.md) sont respectées.

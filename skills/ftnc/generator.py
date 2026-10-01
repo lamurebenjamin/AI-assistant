@@ -253,3 +253,83 @@ def ftnc_details(reference: str) -> str:
             ])
         lignes.append("")
     return "\n".join(lignes).strip()
+
+
+def _references_planner_pour_cartes() -> tuple[set[str], set[str]]:
+    """Toutes les références du planner, uniquement pour l'icône de présence."""
+    cfg = _get_ftnc_config()
+    path = _verifier(cfg["fichier_ftnc"], "du planner FTNC (fichier_ftnc)")
+    df = pd.read_excel(path, sheet_name=cfg["feuille_ftnc"], usecols="B",
+                       engine="openpyxl", dtype=str)
+    if df.empty:
+        return set(), set()
+    valeurs = [_texte(value) for value in df.iloc[:, 0].tolist()]
+    return ({ident for value in valeurs if (ident := _id10(value))},
+            {_normaliser_reference(value) for value in valeurs if value})
+
+
+def ftnc_absentes_du_suivi(reference: str = "") -> list[str]:
+    """Références du planner absentes des lignes retenues par le filtre suivi €uro.
+
+    Compare les dix chiffres comme la skill, puis la référence normalisée.
+    Aucune donnée du planner ne sert à remplir une carte.
+    """
+    suivi = _lire_suivi()
+    cfg = _get_ftnc_config()
+    path = _verifier(cfg["fichier_ftnc"], "du planner FTNC (fichier_ftnc)")
+    df = pd.read_excel(path, sheet_name=cfg["feuille_ftnc"], usecols="B,E",
+                       engine="openpyxl", dtype=str)
+    ids = {item["identifiant"] for item in suivi if item.get("identifiant")}
+    refs = {_normaliser_reference(item["reference"]) for item in suivi
+            if item.get("reference")}
+    recherche = _normaliser_reference(reference)
+    absentes, vues = [], set()
+    if df.empty:
+        return absentes
+    statuts = (df.iloc[:, 1].tolist() if df.shape[1] > 1
+               else [None] * len(df))
+    for value, statut in zip(df.iloc[:, 0].tolist(), statuts):
+        if _texte(statut).casefold() == "terminées":
+            continue
+        if pd.isna(value):
+            continue
+        ref = _texte(value)
+        normalisee = _normaliser_reference(ref)
+        identifiant = _id10(ref)
+        if not normalisee or normalisee in vues:
+            continue
+        vues.add(normalisee)
+        if recherche and recherche not in normalisee and (not identifiant or recherche not in identifiant):
+            continue
+        if normalisee not in refs and (not identifiant or identifiant not in ids):
+            absentes.append(ref)
+    return absentes
+
+
+def ftnc_cartes_suivi(reference: str = "") -> list[dict[str, Any]]:
+    """Cartes issues du suivi €uro; le planner fournit uniquement un booléen."""
+    suivi = _lire_suivi()
+    presents, references = _references_planner_pour_cartes()
+    recherche = _normaliser_reference(reference)
+    cartes = []
+    for item in suivi:
+        if recherche:
+            candidats = (_normaliser_reference(item.get(c))
+                         for c in ("reference", "numero", "identifiant"))
+            if not any(recherche in candidat for candidat in candidats if candidat):
+                continue
+        cartes.append({
+            "reference": item["reference"],
+            "programme": item["programme"],
+            "quantite": item["quantite"],
+            "statut": item["statut"],
+            "type": item["type"],
+            "pole": item["pole"],
+            "piece": item["designation"],
+            "reference_piece": item["reference_piece"],
+            "date_debut": item["date_debut"],
+            "description": item["description"],
+            "sur_planner": bool((item["identifiant"] and item["identifiant"] in presents)
+                                or _normaliser_reference(item["reference"]) in references),
+        })
+    return cartes

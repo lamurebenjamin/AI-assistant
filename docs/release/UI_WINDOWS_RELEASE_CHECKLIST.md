@@ -8,7 +8,7 @@ les icônes ou les raccourcis système.
 
 Contrôles automatisés exécutés sur Windows 11 Professionnel, build 26200 :
 
-- [x] `.\.venv\Scripts\python.exe -m unittest discover -s tests` : 108/108
+- [x] `.\.venv\Scripts\python.exe -m unittest discover -s tests` : 109/109
   tests réussis ;
 - [x] `.\.venv\Scripts\python.exe -m compileall -q src core skills main.pyw tests` ;
 - [x] inspection des écrans et du DPI système : un écran détecté, DPI système
@@ -67,7 +67,7 @@ marqué comme validé sans observation directe.
   `ui-<surface>-<theme>-<dpi>-<YYYYMMDD>.png` et les conserver dans le ticket
   ou la pull request, pas dans le dépôt source.
 - [ ] Décrire toute exception dans
-  [`UI_STYLE_EXCEPTIONS.md`](UI_STYLE_EXCEPTIONS.md).
+  [`UI_STYLE_EXCEPTIONS.md`](../ui/UI_STYLE_EXCEPTIONS.md).
 - [ ] Confirmer que les nouveaux tokens existent dans les deux thèmes.
 - [ ] Confirmer que les nouveaux widgets exposent `refresh_theme()` lorsqu'ils
   peuvent rester ouverts pendant une bascule.

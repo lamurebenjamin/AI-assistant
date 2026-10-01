@@ -13,7 +13,7 @@ HEX_RE = re.compile(r"#[0-9A-Fa-f]{3,8}\b")
 FIXED_DIMENSION_LITERAL_RE = re.compile(r"setFixed(?:Width|Height)\(\s*\d+\s*\)")
 UI_ROOT = Path(__file__).resolve().parents[1] / "src" / "ui"
 TOKEN_FILE = UI_ROOT / "design_tokens.py"
-STYLE_EXCEPTIONS = Path(__file__).resolve().parents[1] / "UI_STYLE_EXCEPTIONS.md"
+STYLE_EXCEPTIONS = Path(__file__).resolve().parents[1] / "docs" / "ui" / "UI_STYLE_EXCEPTIONS.md"
 
 
 def _contrast_ratio(foreground, background):
@@ -119,6 +119,7 @@ class DesignTokenTests(unittest.TestCase):
             "document_dialog.py",
             "tool_call_widget.py",
             "slash_command_popup.py",
+            "pnr_bom_widget.py",
         ):
             self.assertIn(path, exceptions)
 

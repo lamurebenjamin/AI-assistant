@@ -40,3 +40,9 @@ Le fichier PDF est cree automatiquement dans le dossier `output/` du projet.
 ```bash
 pip install reportlab
 ```
+
+## Validation
+
+Vérifier le chemin retourné et l'existence du fichier `.pdf` dans `output/`.
+Pour une modification du skill, exécuter le test ciblé puis la suite décrite
+dans [`skills/README.md`](../README.md).

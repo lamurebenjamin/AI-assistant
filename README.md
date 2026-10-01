@@ -2,17 +2,32 @@
 
 Assistant IA local sous Windows propulsé par **llama.cpp** (modèles GGUF avec accélération CUDA) et **Kokoro TTS** (synthèse vocale locale ONNX/CUDA), doté d'une interface graphique native PySide6 fluide avec effets acryliques Windows 11.
 
+## 📚 Documentation de référence
+
+| Besoin | Document |
+| --- | --- |
+| Installer, lancer et utiliser l'application | Ce README |
+| Modifier le code avec un agent IA | [AGENTS.md](AGENTS.md) |
+| Convention de structure et de nommage | [NAMING_CONVENTION.md](docs/development/NAMING_CONVENTION.md) |
+| Créer ou tester un skill MCP | [skills/README.md](skills/README.md) |
+| Modifier l'interface et le design system | [UI_DESIGN_RULES.md](docs/ui/UI_DESIGN_RULES.md) |
+| Consulter l'état de la qualité et de la maintenabilité | [AUDIT_GLOBAL.md](docs/audits/AUDIT_GLOBAL.md) |
+| Préparer une validation UI Windows | [UI_WINDOWS_RELEASE_CHECKLIST.md](docs/release/UI_WINDOWS_RELEASE_CHECKLIST.md) |
+
+Les audits spécialisés détaillent les constats historiques ; [AUDIT_GLOBAL.md](docs/audits/AUDIT_GLOBAL.md)
+est la synthèse à consulter en premier pour l'état courant.
+
 ---
 
 ## 🌟 Points Forts de la Nouvelle Architecture
 
-L'application a été entièrement refactorisée selon le principe de responsabilité unique (**Single Responsibility Principle**) :
+L'application est organisée par responsabilités selon le principe de responsabilité unique (**Single Responsibility Principle**) ; les extractions décrites ci-dessous sont fournies sous forme de patchs à intégrer et à valider dans le projet complet :
 - **Architecture Découplée** : Séparation stricte entre le backend (serveur llama.cpp, TTS, threads asynchrones, surveillance matérielle) et l'interface graphique (fenêtres, widgets réutilisables, thème).
 - **Code Lisible et Maintenable** : Passage d'un fichier monolithique de plus
   de 6 700 lignes à une architecture par domaines sous `src/`. Les modules
   sont regroupés par responsabilité ; les contrôleurs UI complexes restent des
-  orchestrateurs volumineux et leur découpage incrémental est suivi dans
-  [MAINTAINABILITY_AUDIT.md](MAINTAINABILITY_AUDIT.md).
+  orchestrateurs dont le découpage incrémental est suivi dans
+  [MAINTAINABILITY_AUDIT.md](docs/audits/MAINTAINABILITY_AUDIT.md).
 - **Robustesse & Performance Accrues** :
   - `KokoroEngine` persistant avec import fainéant (*lazy loading*) d'ONNX Runtime (W-12).
   - Nettoyage automatique des fichiers temporaires (vignettes PDF, captures haute définition) lors de la fermeture (W-15).
@@ -78,8 +93,14 @@ Assistant/
 │   │
 │   └── ui/                        # Interface graphique PySide6
 │       ├── design_tokens.py       # Couleurs et dimensions par thème
-│       ├── stylesheet.py           # Helpers QSS réutilisables
-│       ├── stylesheet_document.py  # QSS des fenêtres documentaires
+│       ├── stylesheet.py           # Façade des styles QSS et exports historiques
+│       ├── stylesheet_base.py      # Blocs QSS communs
+│       ├── stylesheet_settings.py  # Styles des paramètres et du diagnostic
+│       ├── stylesheet_conversation.py # Conversation, commandes slash, pièces jointes
+│       ├── stylesheet_assistant.py # Corps de l'assistant et indicateur vocal
+│       ├── stylesheet_tools.py     # Étapes, badges et statuts des outils
+│       ├── stylesheet_builders.py  # Composition des styles des fenêtres
+│       ├── stylesheet_document.py  # Styles documentaires préexistants, à conserver
 │       ├── theme.py               # Acrylique Windows 11 et application du thème
 │       ├── icons.py               # Registre vectoriel SVG
 │       ├── status_formatters.py   # Titres et durées des blocs d'activité
@@ -98,12 +119,25 @@ Assistant/
 │       └── windows/               # Fenêtres principales
 │           ├── assistant_window.py# Fenêtre principale flottante de réponse
 │           ├── assistant_response_renderer.py # Rendu HTML et streaming assistant
-│           ├── document_dialog.py # Fenêtre d'analyse documentaire interactive (Ctrl+9)
+│           ├── document_dialog.py # Façade Qt du dialogue documentaire (Ctrl+9)
+│           ├── document_dialog_view.py # Construction de la vue documentaire
+│           ├── document_skill_controller.py # Menu de skills, tags et commandes slash
+│           ├── document_attachment_renderer.py # Vignettes PDF et images jointes
+│           ├── document_source_preview.py # Agrandissement des captures de sources
+│           ├── document_window_behavior.py # Déplacement, repli et effets de fenêtre
 │           ├── document_composer_controller.py # Envoi, historique et microphone
 │           ├── document_conversation_renderer.py # Rendu conversationnel et viewport
 │           ├── document_source_renderer.py # Captures et liens des sources
 │           ├── document_response_controller.py # Streaming et cycle de réponse
-│           ├── settings_dialog.py # Fenêtre des paramètres complets
+│           ├── settings_dialog.py # Façade Qt et cycle de vie des paramètres
+│           ├── settings_dialog_view.py # Sections LLM, voix, raccourcis et boutons
+│           ├── settings_runtime_controller.py # État serveur/GPU et threads
+│           ├── settings_server_controller.py # Configuration et processus llama-server
+│           ├── settings_audio_controller.py # Microphones et test d'enregistrement
+│           ├── settings_actions_controller.py # Actions et raccourcis
+│           ├── settings_appearance_controller.py # Thème et aperçu Ctrl+9
+│           ├── settings_config_controller.py # Sauvegarde de la configuration
+│           ├── settings_window_behavior.py # Effets visuels de la fenêtre
 │           ├── runtime_info_dialog.py # Diagnostic matériel et logiciel
 │           └── settings_tabs.py    # Builder des onglets de configuration
 │
@@ -112,28 +146,75 @@ Assistant/
     └── skills/                    # Modules DOCX, XLSX, PDF, PPTX
 ```
 
+Les modules de styles et les modules spécialisés des dialogues ci-dessus correspondent
+aux **patchs de refactorisation**. Ils sont à intégrer dans l'arborescence du
+projet existant : les autres composants et dépendances ne sont pas inclus dans
+ces patchs. Les méthodes des dialogues restent disponibles comme façades pour
+préserver les points d'entrée existants.
+
+### Refactorisations UI et validation
+
+- **Dialogue documentaire (`document_dialog.py`)** : construction de la vue,
+  sélection des skills, rendu des pièces jointes, aperçu des sources et
+  comportement de fenêtre extraits dans des modules spécialisés. Le patch
+  comprend `tests/test_document_dialog_extraction.py` ; ses quatre tests
+  statiques ont passé dans l'environnement de préparation.
+- **Paramètres (`settings_dialog.py`)** : vue, état serveur/GPU, serveur local,
+  audio, actions, apparence, sauvegarde et effets de fenêtre répartis par
+  responsabilité. Le patch comprend `tests/test_settings_dialog_extraction.py` ;
+  ses cinq tests ont passé dans l'environnement de préparation.
+- **Styles QSS (`stylesheet.py`)** : façade d'imports et modules `stylesheet_*`
+  par domaine. `stylesheet_document.py` reste un module distinct préexistant.
+  Le test `tests/test_stylesheet_extraction.py` vérifie les références AST et
+  les sorties QSS avec les fichiers
+  `tests/stylesheet_ast_reference.json` et
+  `tests/stylesheet_qss_reference.json`. Le test corrigé cible explicitement
+  les sept modules du patch au lieu de `stylesheet*.py`, motif qui incluait
+  par erreur `stylesheet_document.py`. Les six tests du patch corrigé ont passé,
+  y compris avec un module documentaire présent. Les références et fonctions
+  QSS sont restées inchangées.
+
+Pour exécuter les tests ciblés depuis la racine du projet sous Windows :
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_document_dialog_extraction.py" -v
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_settings_dialog_extraction.py" -v
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_stylesheet_extraction.py" -v
+```
+
+Pour exécuter l'ensemble des tests du projet :
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+Les validations effectuées sur les patchs ne constituent **pas** une validation
+de l'application complète. Vérifier l'intégration des modules dans le projet
+existant et contrôler l'interface sous Windows, notamment les thèmes, le
+dialogue documentaire, les paramètres et les effets de fenêtre.
+
 ---
 
 ## 🎨 Règles de cohérence UI
 
 Les règles obligatoires pour centraliser les couleurs, dimensions, icônes,
 styles QSS et composants réutilisables sont documentées dans
-[UI_DESIGN_RULES.md](UI_DESIGN_RULES.md).
+[UI_DESIGN_RULES.md](docs/ui/UI_DESIGN_RULES.md).
 
 Chaque skill peut déclarer une icône locale dans sa classe avec `icon = "icon.svg"`
 ou `icon = "icon.png"`. Le fichier est recherché dans le dossier du skill.
 Toute modification visuelle doit également respecter la checklist de validation
 des thèmes, états interactifs, accessibilité et assets décrite dans ce document.
 L'audit de conformité des règles, thèmes et contrôles est disponible dans
-[UI_CONFORMANCE_AUDIT.md](UI_CONFORMANCE_AUDIT.md).
+[UI_CONFORMANCE_AUDIT.md](docs/audits/UI_CONFORMANCE_AUDIT.md).
 L'état détaillé de l'harmonisation visuelle est disponible dans
-[UI_VISUAL_HARMONIZATION_AUDIT.md](UI_VISUAL_HARMONIZATION_AUDIT.md).
+[UI_VISUAL_HARMONIZATION_AUDIT.md](docs/audits/UI_VISUAL_HARMONIZATION_AUDIT.md).
 La checklist de validation native Windows est disponible dans
-[UI_WINDOWS_RELEASE_CHECKLIST.md](UI_WINDOWS_RELEASE_CHECKLIST.md).
+[UI_WINDOWS_RELEASE_CHECKLIST.md](docs/release/UI_WINDOWS_RELEASE_CHECKLIST.md).
 L'audit de maintenabilité et de facilité de mise à jour est disponible dans
-[MAINTAINABILITY_AUDIT.md](MAINTAINABILITY_AUDIT.md).
+[MAINTAINABILITY_AUDIT.md](docs/audits/MAINTAINABILITY_AUDIT.md).
 La synthèse à jour de ces audits est disponible dans
-[AUDIT_GLOBAL.md](AUDIT_GLOBAL.md). Ce rapport global est le document de
+[AUDIT_GLOBAL.md](docs/audits/AUDIT_GLOBAL.md). Ce rapport global est le document de
 référence pour le verdict, les résultats de validation et la roadmap restante ;
 les trois rapports spécialisés conservent le détail de chaque domaine.
 
@@ -171,6 +252,21 @@ jeton.
 - Windows 10/11 64-bit
 - Python 3.10 ou supérieur
 - (Optionnel mais recommandé) Carte graphique NVIDIA avec support CUDA 12.x
+
+### Dépannage rapide
+
+- **Le serveur LLM ne répond pas** : fermer tout `llama-server` lancé
+  manuellement, puis relancer l'application afin qu'elle crée son jeton local
+  et démarre le serveur avec la configuration de `config.json`.
+- **La synthèse vocale est indisponible** : vérifier les fichiers du modèle
+  Kokoro et l'installation de `onnxruntime-gpu` dans l'environnement virtuel ;
+  l'interface peut rester utilisable sans TTS.
+- **Un skill n'est pas découvert** : vérifier son arborescence, sa classe
+  wrapper et ses outils avec les contrôles décrits dans
+  [skills/README.md](skills/README.md).
+- **Une modification UI semble incohérente** : consulter
+  [UI_DESIGN_RULES.md](docs/ui/UI_DESIGN_RULES.md), puis exécuter les tests et la
+  checklist Windows correspondants.
 
 ### 2. Installation des Dépendances
 Dans un terminal PowerShell :
@@ -241,11 +337,15 @@ graph TD
 ## 🤖 Gouvernance & Développement par LLM
 
 Le projet applique une règle stricte pour toute contribution ou intervention par un modèle d'IA (LLM / Agent de programmation) :
-- **Règles obligatoires** : consulter le document de référence [`AGENTS.md`](AGENTS.md) ou `.agents/rules/llm_development_rules.md`.
+- **Règles obligatoires** : consulter le document de référence [`AGENTS.md`](AGENTS.md).
+  Le fichier `.agents/rules/llm_development_rules.md` est un relais pour les
+  outils qui chargent automatiquement `.agents/rules`.
 - **Exigences** :
   1. À chaque action, la **documentation**, les **tests unitaires**, et les **sources uniques de vérité** (*Design Tokens*, icônes SVG dans `src/ui/icons.py`) doivent être mis à jour.
   2. Aucun bug ne peut être résolu sans test de non-régression associé.
-  3. Tous les tests doivent passer au vert avant livraison (`python -m unittest discover tests`).
+  3. Les validations adaptées au périmètre doivent passer avant livraison ;
+     la commande complète est
+     `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`.
 
 ---
 
