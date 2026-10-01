@@ -97,7 +97,7 @@ def _build_ui(self):
     self.response.setViewportMargins(0, 0, 0, 0)
     self.response_holder = QWidget(self.content_widget)
     response_holder_layout = QHBoxLayout(self.response_holder)
-    response_holder_layout.setContentsMargins(0, 0, 8, 0)
+    response_holder_layout.setContentsMargins(0, 0, 0, 0)
     response_holder_layout.setSpacing(0)
     self.turn_navigation = QFrame(self.response_holder)
     self.turn_navigation.setObjectName("TurnNavigation")
